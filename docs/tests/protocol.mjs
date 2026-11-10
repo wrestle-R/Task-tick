@@ -45,7 +45,17 @@ try {
   await db.query('savepoint invalid_replay');
   await assert.rejects(sync([{...initial,patch:{title:'Changed payload'}}]), /Mutation ID reused/);
   await db.query('rollback to savepoint invalid_replay');
-  console.log('PASS: replay/lost response, field merges, server-order conflicts/history, deletion/stale recovery, restore, RLS/account isolation, mutation ID integrity.');
+  await sync([mutation({},'delete')]);
+  await db.query('reset role');
+  await db.query(`update public."code-todo" set deleted_at=now()-interval '8 days' where user_id=$1 and id=$2`,[a,id]);
+  await db.query("update tick_private.history set at=now()-interval '8 days' where user_id=$1",[a]);
+  await as(a);
+  const expired = await sync([]);
+  assert.deepEqual(expired.history, [], 'Recovery history must expire after seven days');
+  assert.equal(expired.items[0].title, 'Deleted item', 'Old trash content must be removed');
+  const ancient = await sync([mutation({title:'Ancient offline edit'})]);
+  assert.ok(ancient.items[0].deletedAt, 'An old offline device must not resurrect purged trash');
+  console.log('PASS: seven-day expiry, tombstone retention, replay/lost response, field merges, server-order conflicts/history, deletion/stale recovery, restore, RLS/account isolation, mutation ID integrity.');
 } finally {
   await db.query('rollback');
   await db.end();
