@@ -31,3 +31,6 @@ Thumbs.db
 
 # Supabase CLI scratch state
 supabase/.temp/
+
+# Generated Tauri permission schemas
+desktop/src-tauri/gen/
