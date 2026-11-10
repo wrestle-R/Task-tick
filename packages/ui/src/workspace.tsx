@@ -349,7 +349,9 @@ export function Workspace({
     setMessage("");
     try {
       const redirect =
-        typeof window === "undefined" ? "" : `${window.location.origin}/app`;
+        desktop
+          ? `${config?.api ?? "https://task-tick-beige.vercel.app"}/app`
+          : typeof window === "undefined" ? "" : `${window.location.origin}/app`;
       const result =
         authMode === "signup"
           ? await client.auth.signUp({

@@ -45,7 +45,8 @@ class TickRepository private constructor(private val context: Context) : SQLiteO
   val site=api.trim().trimEnd('/');require(site.startsWith("https://")||(BuildConfig.DEBUG&&site.startsWith("http://"))){"Use an HTTPS website URL"}
   val config=request("$site/api/config");val url=config.optString("url");val key=config.optString("key");require(url.startsWith("https://")&&key.isNotEmpty()){"Account service is not configured"}
   prefs.edit().putString("backend",site).putString("supabase",url).putString("clientKey",key).commit()
-  val endpoint=when(mode){"signup"->"signup";"reset"->"recover";else->"token?grant_type=password"}
+  val redirect=java.net.URLEncoder.encode("$site/app","UTF-8")
+  val endpoint=when(mode){"signup"->"signup?redirect_to=$redirect";"reset"->"recover?redirect_to=$redirect";else->"token?grant_type=password"}
   val body=JSONObject().put("email",email).put("password",password);val response=request("$url/auth/v1/$endpoint",body,key=key)
   if(response.has("access_token")){writeSession(response);prefs.edit().putString("account",response.getJSONObject("user").getString("id")).putString("email",email).commit();scheduleSync();Widgets.refresh(context);return "Signed in"}
   return if(mode=="reset")"Check your email for a password reset link." else "Check your email to verify your account, then sign in."
