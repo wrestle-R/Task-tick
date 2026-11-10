@@ -1,0 +1,85 @@
+name: Prepare release
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: read
+jobs:
+  checks:
+    uses: ./.github/workflows/checks.yml
+  linux:
+    needs: checks
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf
+      - run: npm ci
+      - run: npm run tauri -w desktop -- build --bundles deb,appimage
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: |
+            desktop/src-tauri/target/release/bundle/deb/*.deb
+            desktop/src-tauri/target/release/bundle/appimage/*.AppImage
+          if-no-files-found: error
+  android:
+    needs: checks
+    runs-on: ubuntu-24.04
+    environment: native-release
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: android-actions/setup-android@v3
+      - run: sdkmanager 'platforms;android-37.0' 'build-tools;37.0.0' 'ndk;27.1.12297006'
+      - run: npm ci --prefix app
+      - name: Restore signing identity
+        env:
+          KEYSTORE: ${{ secrets.TICK_ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          test -n "$KEYSTORE" || { echo 'Configure the native-release signing secrets first'; exit 1; }
+          printf '%s' "$KEYSTORE" | base64 --decode > "$RUNNER_TEMP/tick-release.keystore"
+          chmod 600 "$RUNNER_TEMP/tick-release.keystore"
+      - run: ./gradlew :app:assembleRelease
+        working-directory: app/android
+        env:
+          TICK_ANDROID_KEYSTORE: ${{ runner.temp }}/tick-release.keystore
+          TICK_ANDROID_STORE_PASSWORD: ${{ secrets.TICK_ANDROID_STORE_PASSWORD }}
+          TICK_ANDROID_KEY_ALIAS: ${{ secrets.TICK_ANDROID_KEY_ALIAS }}
+          TICK_ANDROID_KEY_PASSWORD: ${{ secrets.TICK_ANDROID_KEY_PASSWORD }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android
+          path: app/android/app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
+  draft:
+    needs: [linux, android]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - name: Checksums and draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_REPO: ${{ github.repository }}
+        run: |
+          cd artifacts
+          sha256sum *.apk *.deb *.AppImage > SHA256SUMS
+          gh release create "$RELEASE_TAG" --repo "$RELEASE_REPO" --draft --title "$RELEASE_TAG" --notes 'Build checks passed. Device, package installation and update acceptance must be recorded before publishing.' ./*

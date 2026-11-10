@@ -9,9 +9,25 @@
 # Dependencies and build output
 node_modules/
 .next/
+.next-*/
 dist/
 build/
+target/
+*.tsbuildinfo
+coverage/
+.gradle/
+.cxx/
+.kotlin/
+__pycache__/
+local.properties
+*.keystore
+*.jks
+captures/
+.vercel/
+.DS_Store
 
 # System files
-.DS_Store
 Thumbs.db
+
+# Supabase CLI scratch state
+supabase/.temp/

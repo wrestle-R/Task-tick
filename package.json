@@ -1,0 +1,29 @@
+{
+  "name": "tick-and-done",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "next",
+    "desktop",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev -w next",
+    "build": "npm run build -w next && npm run build -w desktop",
+    "test": "tsx --test packages/core/test/*.test.ts",
+    "typecheck": "tsc -p packages/core/tsconfig.json --noEmit && npm run typecheck -w next && npm run typecheck -w desktop",
+    "desktop": "npm run tauri -w desktop -- dev"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.56.1",
+    "@types/node": "24.10.0",
+    "pg": "8.16.3",
+    "prettier": "3.6.2",
+    "supabase": "2.122.1",
+    "tsx": "4.21.0",
+    "typescript": "5.9.3"
+  },
+  "engines": {
+    "node": ">=22.22.2"
+  }
+}
