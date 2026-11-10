@@ -28,7 +28,7 @@ class TickRepository private constructor(private val context: Context) : SQLiteO
  override fun onUpgrade(db:SQLiteDatabase,old:Int,new:Int){}
  override fun onConfigure(db:SQLiteDatabase){db.enableWriteAheadLogging();db.execSQL("PRAGMA synchronous=FULL")}
  fun account():String?=prefs.getString("account",null)
- fun backend():String=prefs.getString("backend","https://task-tick-beige.vercel.app")?:"https://task-tick-beige.vercel.app"
+ fun backend():String="https://task-tick-beige.vercel.app"
  private fun empty()=JSONObject("{\"items\":[],\"outbox\":[],\"history\":[],\"cursor\":0}")
  @Synchronized fun read():JSONObject {val a=account()?:return empty();readableDatabase.rawQuery("SELECT state FROM accounts WHERE id=?",arrayOf(a)).use{if(it.moveToFirst())return JSONObject(it.getString(0))};return empty()}
  private fun save(s:JSONObject){val a=account()?:throw IllegalStateException("Sign in first");writableDatabase.insertWithOnConflict("accounts",null,ContentValues().apply{put("id",a);put("state",s.toString())},SQLiteDatabase.CONFLICT_REPLACE)}

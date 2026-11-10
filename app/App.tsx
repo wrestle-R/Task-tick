@@ -63,7 +63,6 @@ export default function App() {
     [settings, setSettings] = useState(false),
     [email, setEmail] = useState(''),
     [password, setPassword] = useState(''),
-    [backend, setBackend] = useState('https://task-tick-beige.vercel.app'),
     [authMode, setAuthMode] = useState('login'),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(''),
@@ -76,7 +75,6 @@ export default function App() {
     try {
       const value = JSON.parse(await native.snapshot());
       setSnap(value);
-      if (value.backend) setBackend(value.backend);
       const u = value.state.undo;
       setUndo(u && u.until > Date.now() ? u : null);
       if (pendingLink.current) {
@@ -190,7 +188,7 @@ export default function App() {
         authMode,
         email.trim(),
         password,
-        backend,
+        'https://task-tick-beige.vercel.app',
       );
       setPassword('');
       await refresh();
@@ -327,16 +325,6 @@ export default function App() {
           <Text style={[s.description, { color: c.muted }]}>
             Your todos. Your watchlist. A little space for both.
           </Text>
-          {label('WEBSITE / BACKEND URL')}
-          <TextInput
-            style={inputStyle}
-            value={backend}
-            onChangeText={setBackend}
-            autoCapitalize="none"
-            keyboardType="url"
-            placeholder="https://your-tick-website.example"
-            placeholderTextColor={c.muted}
-          />
           {label('EMAIL')}
           <TextInput
             style={inputStyle}
@@ -364,7 +352,6 @@ export default function App() {
             disabled={
               busy ||
               !email ||
-              !backend ||
               (authMode !== 'reset' && password.length < 8)
             }
             style={s.primary}

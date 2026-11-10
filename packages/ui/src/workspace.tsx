@@ -116,7 +116,7 @@ export function Workspace({
     );
     setReminders(localStorage.getItem("tick-reminders") === "yes");
     if (!initialConfig) {
-      const api = desktop ? (localStorage.getItem("tick-api") ?? "https://task-tick-beige.vercel.app") : "";
+      const api = desktop ? "https://task-tick-beige.vercel.app" : "";
       let cached: Config | null = null;
       try {
         cached = JSON.parse(
@@ -1222,32 +1222,6 @@ export function Workspace({
                 ? "Keep the app running in the tray for reminders."
                 : "Browser reminders work while this website is open. Your phone handles background reminders."}
             </p>
-            {desktop && (
-              <label>
-                Website/backend URL
-                <input
-                  type="url"
-                  defaultValue={
-                    config?.api ?? localStorage.getItem("tick-api") ?? "https://task-tick-beige.vercel.app"
-                  }
-                  placeholder="https://your-tick-website.example"
-                  onBlur={(e) => {
-                    const v = e.target.value.trim().replace(/\/$/, "");
-                    if (v && !/^https?:\/\//.test(v)) {
-                      setError("Enter an http or https URL.");
-                      return;
-                    }
-                    localStorage.setItem("tick-api", v);
-                  }}
-                />
-                <button
-                  className="secondary-button"
-                  onClick={() => location.reload()}
-                >
-                  Reconnect to backend
-                </button>
-              </label>
-            )}
             <p className="muted">
               Edit history and trash are kept for seven days. Pending offline
               changes stay on this device until synced.
