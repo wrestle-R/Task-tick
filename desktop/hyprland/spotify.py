@@ -22,7 +22,7 @@ def request(method,params=None,timeout=19):
   return result.get('result',{})
 def remember(state):
  uri=state.get('uri','')
- if not re.fullmatch(r'spotify:track:[a-zA-Z0-9]+',uri):return
+ if state.get('status') == 'stopped' or not re.fullmatch(r'spotify:track:[a-zA-Z0-9]+',uri):return
  STATE.mkdir(parents=True,exist_ok=True,mode=0o700)
  value={k:state.get(k) for k in ['uri','position_ms','duration_ms','volume','shuffle','repeat']}
  target=STATE/'last-track.json';temp=STATE/f'.last-track-{os.getpid()}.tmp'
