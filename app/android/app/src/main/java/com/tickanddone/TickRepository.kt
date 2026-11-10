@@ -23,6 +23,7 @@ import java.time.Instant
 
 class TickRepository private constructor(private val context: Context) : SQLiteOpenHelper(context,"tick.sqlite3",null,1) {
  companion object { @Volatile private var instance:TickRepository?=null; fun get(c:Context)=instance?:synchronized(this){instance?:TickRepository(c.applicationContext).also{instance=it}} }
+ private val syncLock=Any()
  private val prefs=context.getSharedPreferences("tick-settings",Context.MODE_PRIVATE)
  override fun onCreate(db:SQLiteDatabase){db.execSQL("CREATE TABLE accounts(id TEXT PRIMARY KEY,state TEXT NOT NULL)")}
  override fun onUpgrade(db:SQLiteDatabase,old:Int,new:Int){}
@@ -51,7 +52,7 @@ class TickRepository private constructor(private val context: Context) : SQLiteO
   if(response.has("access_token")){writeSession(response);prefs.edit().putString("account",response.getJSONObject("user").getString("id")).putString("email",email).commit();scheduleSync();Widgets.refresh(context);return "Signed in"}
   return if(mode=="reset")"Check your email for a password reset link." else "Check your email to verify your account, then sign in."
  }
- private fun accessToken():String{var s=session();if(s.optLong("expires_at",0)<System.currentTimeMillis()/1000+60){s=request("${prefs.getString("supabase","")}/auth/v1/token?grant_type=refresh_token",JSONObject().put("refresh_token",s.getString("refresh_token")),key=prefs.getString("clientKey",null));writeSession(s)};return s.getString("access_token")}
+ private fun accessToken():String{val owner=account()?:throw IllegalStateException("Sign in to sync");var s=session();if(s.optLong("expires_at",0)<System.currentTimeMillis()/1000+60){s=request("${prefs.getString("supabase","")}/auth/v1/token?grant_type=refresh_token",JSONObject().put("refresh_token",s.getString("refresh_token")),key=prefs.getString("clientKey",null));synchronized(this){check(account()==owner){"Account changed. Sign in to sync."};writeSession(s)}};check(account()==owner){"Account changed. Sign in to sync."};return s.getString("access_token")}
  @Synchronized fun logout(){prefs.edit().remove("account").remove("email").remove("session").commit();Widgets.refresh(context);Reminders.schedule(context)}
  private fun defaultItem(id:String,kind:String)=JSONObject().put("id",id).put("kind",kind).put("title","").put("done",false).put("notes","").put("priority",0).put("dueAt",JSONObject.NULL).put("parentId",JSONObject.NULL).put("position",System.currentTimeMillis()).put("rating",JSONObject.NULL).put("mediaType",JSONObject.NULL).put("tmdbId",JSONObject.NULL).put("poster",JSONObject.NULL).put("deletedAt",JSONObject.NULL)
  private fun patchItem(s:JSONObject,id:String,kind:String,patch:JSONObject,action:String="patch"){
@@ -79,7 +80,7 @@ class TickRepository private constructor(private val context: Context) : SQLiteO
   writableDatabase.beginTransaction();try{save(s);writableDatabase.setTransactionSuccessful()}finally{writableDatabase.endTransaction()};Widgets.refresh(context);Reminders.schedule(context);scheduleSync();return snapshot()
  }
  fun scheduleSync(){val scheduler=context.getSystemService(JobScheduler::class.java);scheduler.schedule(JobInfo.Builder(100,ComponentName(context,TickSyncJob::class.java)).setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY).setOverrideDeadline(1000).build());scheduler.schedule(JobInfo.Builder(101,ComponentName(context,TickSyncJob::class.java)).setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY).setPeriodic(15*60*1000L).setPersisted(true).build())}
- fun sync():JSONObject {
+ fun sync():JSONObject = synchronized(syncLock) {
   val a=account()?:return snapshot();val token=accessToken();val before=synchronized(this){read()};val pending=JSONArray();for(i in 0 until minOf(100,before.getJSONArray("outbox").length()))pending.put(before.getJSONArray("outbox").getJSONObject(i))
   val result=request("${backend()}/api/sync",JSONObject().put("cursor",before.optLong("cursor")).put("mutations",pending),token)
   synchronized(this){if(a!=account())return snapshot();val current=read();val accepted=result.getJSONArray("accepted");val ack=(0 until accepted.length()).map{accepted.getString(it)}.toSet();val remaining=JSONArray();val queue=current.getJSONArray("outbox");for(i in 0 until queue.length())if(!ack.contains(queue.getJSONObject(i).getString("id")))remaining.put(queue.getJSONObject(i));

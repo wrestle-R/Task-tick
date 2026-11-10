@@ -95,7 +95,10 @@ export default function App() {
       setSnap(JSON.parse(await native.sync()));
       setError('');
     } catch (e) {
-      setError((e as Error).message);
+      const message = (e as Error).message;
+      setError(/resolve host|network|connect|timed? ?out/i.test(message)
+        ? 'Saved on this device. Sync will retry when you’re online.'
+        : message);
     } finally {
       setBusy(false);
     }
