@@ -14,8 +14,9 @@
 - [x] Rust sidebar parent/child atomic completion and account isolation tests
 - [ ] Desktop notification/IPC/integration runtime acceptance
 - [ ] Spotify warm/cold recovery acceptance
-- [ ] Verified GitHub-triggered Vercel deployment
-- [ ] Signed native releases and download checksums
+- [x] GitHub-triggered Vercel deployment and deployed offline-browser suite
+- [x] Production-signed Android APK (apksigner verified), Linux deb/AppImage builds and local SHA256 checksums
+- [ ] Native installation/update/widget/reminder acceptance and published release
 
 Source implementation alone does not close a runtime or release gate. Keep remaining failures and external configuration requirements explicit.
 
