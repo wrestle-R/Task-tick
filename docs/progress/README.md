@@ -27,3 +27,5 @@ CI now checks Node 24 web/core builds, bare Android compile, and Rust tests. Tag
 Android device discovery currently reports that the SDK is unavailable to the Device panel. Installed Hyprland integration exists; actual tray, sidebar, autostart and notification behaviour still needs acceptance. Spotify helper startup exposed a file-writing bug, now fixed; warm playback was confirmed, while full queue and reboot recovery remain open.
 
 2026-11-10 verification update: database protocol integration suite passed and rolled back its data. Latest Linux deb/AppImage packages built successfully; packaged binary started and its IPC correctly requires sign-in. Latest Android debug APK installed successfully on the connected phone. Device UI automation remains blocked by Device panel SDK discovery. GitHub main implementation commit is pushed and triggered Vercel production deployment and CI.
+
+CI run 42865969433 passed web, Rust and Android checks for commit 49f28fc. Emulator provisioning is being repaired to enable isolated native acceptance.
