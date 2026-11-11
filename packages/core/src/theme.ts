@@ -1,0 +1,28 @@
+export const themes = {
+  "light": {
+    "paper": "#faf9f6",
+    "surface": "#ffffff",
+    "sidebar": "#f1f0eb",
+    "ink": "#292c26",
+    "muted": "#81847a",
+    "line": "#e5e5dd",
+    "accent": "#d8ed96",
+    "accentInk": "#354422",
+    "hover": "#f2f3eb",
+    "error": "#9b4039"
+  },
+  "dark": {
+    "paper": "#171a17",
+    "surface": "#20241e",
+    "sidebar": "#1c201b",
+    "ink": "#e9ecdf",
+    "muted": "#9caa94",
+    "line": "#353e30",
+    "accent": "#c6e482",
+    "accentInk": "#233118",
+    "hover": "#293125",
+    "error": "#ffa79b"
+  }
+} as const;
+
+export const themeGeometry = { controlRadius: 7, panelRadius: 18 } as const;

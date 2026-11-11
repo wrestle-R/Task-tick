@@ -35,3 +35,5 @@ CI run 42865969433 passed web, Rust and Android checks for commit 49f28fc. Emula
 Implementation resumed against the six-phase completion plan. New source fixes guard web/native outgoing sync against account transitions, clear account-owned Android notifications on signout/sign-in, check overdue reminders during native refresh, and reverse known integration config changes without replacing unrelated later edits. Three installer regression tests cover preserved edits and conflict refusal. Legacy integration manifests still require reviewed migration; generated artifact cleanup is not yet complete.
 
 These changes do not close account/mailbox, widget, reminder-delivery, desktop or release acceptance gates. No new native release is published.
+
+Real email verification acceptance (2026-11-11): the designated account received its verification email, the user reported the link opened Tick and Done, and a read-only database check confirmed verified state. Password-reset delivery/form acceptance is still pending; the reset request was accepted without changing the account password.

@@ -1,30 +1,6 @@
-@import url("https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;450;500;550;600;650;700&family=Manrope:wght@400;500;600;650;700;750;800&display=swap");
-:root {
-  --paper: #faf9f6;
-  --surface: #fff;
-  --sidebar: #f1f0eb;
-  --ink: #292c26;
-  --muted: #81847a;
-  --line: #e5e5dd;
-  --accent: #d8ed96;
-  --accent-ink: #354422;
-  --hover: #f2f3eb;
-  --error: #9b4039;
-  color-scheme: light;
-}
-:root[data-theme="dark"] {
-  --paper: #171a17;
-  --surface: #20241e;
-  --sidebar: #1c201b;
-  --ink: #e9ecdf;
-  --muted: #9caa94;
-  --line: #353e30;
-  --accent: #c6e482;
-  --accent-ink: #233118;
-  --hover: #293125;
-  --error: #ffa79b;
-  color-scheme: dark;
-}
+@import "./theme.css";
+@font-face { font-family: "DM Sans"; src: url("../assets/fonts/DMSans.ttf") format("truetype"); font-weight: 100 1000; font-display: swap; }
+@font-face { font-family: "Manrope"; src: url("../assets/fonts/Manrope.ttf") format("truetype"); font-weight: 200 800; font-display: swap; }
 * {
   box-sizing: border-box;
 }
@@ -489,7 +465,7 @@ p {
   width: 55px;
   height: 55px;
   background: var(--sidebar);
-  border-radius: 18px;
+  border-radius: var(--radius-panel);
   margin: 0 auto 18px;
   font-size: 28px;
   color: #8f9f6b;
@@ -561,7 +537,7 @@ label input,
 label textarea,
 label select {
   border: 1px solid var(--line);
-  border-radius: 7px;
+  border-radius: var(--radius-control);
   padding: 12px;
   background: var(--paper);
   font-size: 13px;
@@ -579,7 +555,7 @@ label textarea {
   padding: 13px 15px;
   background: var(--accent);
   color: var(--accent-ink);
-  border-radius: 7px;
+  border-radius: var(--radius-control);
   font-weight: 600;
   font-size: 12px;
   margin-top: 24px;
@@ -605,7 +581,7 @@ label textarea {
   border: 1px solid #ba8f7c55;
   background: #ba8f7c0a;
   color: var(--error);
-  border-radius: 7px;
+  border-radius: var(--radius-control);
   font-size: 12px;
   line-height: 1.7;
 }
@@ -647,7 +623,7 @@ label textarea {
   gap: 10px;
   background: var(--sidebar);
   border: 1px solid var(--line);
-  border-radius: 7px;
+  border-radius: var(--radius-control);
   padding: 11px 16px;
   font-size: 12px;
   width: 100%;

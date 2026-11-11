@@ -77,6 +77,7 @@ android {
     buildToolsVersion rootProject.ext.buildToolsVersion
     compileSdk rootProject.ext.compileSdkVersion
 
+    sourceSets.main.assets.srcDirs += [rootProject.file("../../packages/ui/assets")]
     namespace "com.tickanddone"
     defaultConfig {
         applicationId "com.tickanddone"

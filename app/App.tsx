@@ -15,12 +15,15 @@ import {
   ScrollView,
   StatusBar,
   StyleSheet,
-  Text,
-  TextInput,
+  Text as NativeText,
+  TextInput as NativeTextInput,
   View,
   useColorScheme,
 } from 'react-native';
 import type { Item, Kind, State, Fields } from '../packages/core/src/index';
+import { themes, themeGeometry } from '../packages/core/src/theme';
+const Text = (props: React.ComponentProps<typeof NativeText>) => <NativeText {...props} style={[{fontFamily: 'DMSans'}, props.style]} />;
+const TextInput = (props: React.ComponentProps<typeof NativeTextInput>) => <NativeTextInput {...props} style={[{fontFamily: 'DMSans'}, props.style]} />;
 type Snapshot = {
   state: State;
   account: string | null;
@@ -38,21 +41,9 @@ const blank: Snapshot = {
 };
 export default function App() {
   const dark = useColorScheme() === 'dark';
-  const c = dark
-    ? {
-        bg: '#171B17',
-        surface: '#22281F',
-        ink: '#F0F1E7',
-        muted: '#9AA58F',
-        line: '#343F2E',
-      }
-    : {
-        bg: '#FAF9F4',
-        surface: '#F0F0E7',
-        ink: '#2B3027',
-        muted: '#858C79',
-        line: '#E3E5D9',
-      };
+  const palette = themes[dark ? 'dark' : 'light'];
+  const c = { ...palette, bg: palette.paper };
+  const s = makeStyles(palette);
   const [snap, setSnap] = useState(blank),
     [kind, setKind] = useState<Kind>('todo'),
     [view, setView] = useState<'active' | 'done' | 'trash' | 'history'>(
@@ -401,7 +392,7 @@ export default function App() {
               >
                 <Text
                   style={{
-                    color: kind === k ? '#354422' : c.muted,
+                    color: kind === k ? c.accentInk : c.muted,
                     fontSize: 12,
                   }}
                 >
@@ -618,7 +609,7 @@ export default function App() {
       )}
       {error !== '' && (
         <Pressable style={s.error} onPress={() => setError('')}>
-          <Text style={{ color: '#9F5047', fontSize: 12, lineHeight: 18 }}>
+          <Text style={{ color: c.error, fontSize: 12, lineHeight: 18 }}>
             {error} ×
           </Text>
         </Pressable>
@@ -713,7 +704,7 @@ export default function App() {
                         <Text
                           style={{
                             color:
-                              selected.priority === n ? '#354422' : c.muted,
+                              selected.priority === n ? c.accentInk : c.muted,
                             fontSize: 12,
                           }}
                         >
@@ -840,7 +831,7 @@ export default function App() {
             </Pressable>
             {snap.account && (
               <Pressable onPress={() => void logout()}>
-                <Text style={[s.link, { color: '#A7675B', marginTop: 35 }]}>
+                <Text style={[s.link, { color: c.error, marginTop: 35 }]}>
                   Sign out
                 </Text>
               </Pressable>
@@ -869,6 +860,8 @@ function TaskRow({
   trash: boolean;
 }) {
   const dy = useRef(new Animated.Value(0)).current;
+  const s = makeStyles(colors);
+  const palette = colors;
   const move = useRef(onMove);
   move.current = onMove;
   const pan = useRef(
@@ -906,10 +899,10 @@ function TaskRow({
         style={[
           s.check,
           { borderColor: colors.muted },
-          item.done && { backgroundColor: '#D8ED96', borderColor: '#D8ED96' },
+          item.done && { backgroundColor: palette.accent, borderColor: palette.accent },
         ]}
       >
-        <Text style={{ color: '#354422' }}>
+        <Text style={{ color: palette.accentInk }}>
           {trash ? '↶' : item.done ? '✓' : ''}
         </Text>
       </Pressable>
@@ -964,7 +957,7 @@ function TaskRow({
     </Animated.View>
   );
 }
-const s = StyleSheet.create({
+const makeStyles = (palette: typeof themes.light | typeof themes.dark) => StyleSheet.create({
   root: { flex: 1 },
   header: {
     paddingHorizontal: 25,
@@ -974,11 +967,12 @@ const s = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
   },
-  brand: { fontSize: 23, fontWeight: '700', letterSpacing: -1 },
+  brand: { fontFamily: 'Manrope', fontSize: 23, fontWeight: '700', letterSpacing: -1 },
   logo: { color: '#8D9F67', fontSize: 27 },
   auth: { padding: 28, paddingTop: 40, paddingBottom: 80 },
   eyebrow: { fontSize: 9, letterSpacing: 2, fontWeight: '600' },
   authTitle: {
+    fontFamily: 'Manrope',
     fontSize: 46,
     fontWeight: '600',
     letterSpacing: -2.5,
@@ -987,20 +981,21 @@ const s = StyleSheet.create({
   },
   description: { fontSize: 12, lineHeight: 21, marginTop: 12 },
   label: { fontSize: 9, letterSpacing: 1.3, marginTop: 25, marginBottom: 10 },
-  input: { borderWidth: 1, borderRadius: 9, padding: 15, fontSize: 14 },
+  input: { borderWidth: 1, borderRadius: themeGeometry.controlRadius, padding: 15, fontSize: 14 },
   primary: {
-    backgroundColor: '#D8ED96',
+    backgroundColor: palette.accent,
     padding: 17,
-    borderRadius: 9,
+    borderRadius: themeGeometry.controlRadius,
     marginTop: 23,
   },
-  primaryText: { color: '#354422', fontWeight: '600', fontSize: 14 },
+  primaryText: { color: palette.accentInk, fontWeight: '600', fontSize: 14 },
   link: { fontSize: 12, marginTop: 19 },
   modes: { flexDirection: 'row', gap: 7, paddingHorizontal: 24 },
   mode: { paddingHorizontal: 14, paddingVertical: 11, borderRadius: 8 },
-  modeActive: { backgroundColor: '#D8ED96' },
+  modeActive: { backgroundColor: palette.accent },
   heading: { paddingHorizontal: 26, paddingTop: 33, paddingBottom: 26 },
   title: {
+    fontFamily: 'Manrope',
     fontSize: 34,
     letterSpacing: -1.8,
     fontWeight: '500',
@@ -1033,8 +1028,8 @@ const s = StyleSheet.create({
   addButton: {
     fontSize: 11,
     fontWeight: '600',
-    backgroundColor: '#D8ED96',
-    color: '#354422',
+    backgroundColor: palette.accent,
+    color: palette.accentInk,
     padding: 9,
     borderRadius: 6,
   },
