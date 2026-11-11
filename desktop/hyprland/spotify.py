@@ -24,7 +24,7 @@ def remember(state):
  uri=state.get('uri','')
  if state.get('status') == 'stopped' or not re.fullmatch(r'spotify:track:[a-zA-Z0-9]+',uri):return
  STATE.mkdir(parents=True,exist_ok=True,mode=0o700)
- value={k:state.get(k) for k in ['uri','position_ms','duration_ms','volume','shuffle','repeat']}
+ value={k:state.get(k) for k in ['uri','position_ms','duration_ms','volume','shuffle','repeat','sequence']}
  target=STATE/'last-track.json';temp=STATE/f'.last-track-{os.getpid()}.tmp'
  with open(temp,'w',opener=lambda p,f:os.open(p,f,0o600)) as f:json.dump(value,f)
  os.replace(temp,target)
@@ -50,7 +50,21 @@ def toggle():
    if not path.exists():raise RuntimeError('Choose a song in Spotify once; there is no previous track to resume.')
    saved=json.loads(path.read_text());uri=saved.get('uri','')
    if not re.fullmatch(r'spotify:track:[a-zA-Z0-9]+',uri):raise RuntimeError('No valid saved track')
-   request('play_track',{'uri':uri});position=max(0,min(int(saved.get('position_ms') or 0),int(saved.get('duration_ms') or 86400000)-1000))
+   sequence=saved.get('sequence')
+   if isinstance(sequence,dict):
+    uris=sequence.get('uris',[]);index=sequence.get('index')
+    if not isinstance(uris,list) or not 1<=len(uris)<=5000 or not isinstance(index,int) or not 0<=index<len(uris) or any(not isinstance(u,str) or not re.fullmatch(r'spotify:track:[a-zA-Z0-9]+',u) for u in uris) or uris[index]!=uri:raise RuntimeError('Saved playback queue is invalid; open the player to choose a track.')
+    request('play_sequence',{'uris':uris,'index':index})
+   else:request('play_track',{'uri':uri})
+   if isinstance(saved.get('volume'),int) and 0<=saved['volume']<=100:request('set_volume',{'volume':saved['volume']})
+   if isinstance(saved.get('shuffle'),bool):request('set_shuffle',{'enabled':saved['shuffle']})
+   repeat=saved.get('repeat')
+   if repeat in ['off','track','context']:
+    if repeat=='track':
+     request('repeat_context',{'enabled':False});request('repeat_track',{'enabled':True})
+    else:
+     request('repeat_track',{'enabled':False});request('repeat_context',{'enabled':repeat=='context'})
+   position=max(0,min(int(saved.get('position_ms') or 0),int(saved.get('duration_ms') or 86400000)-1000))
    if position>1000:request('seek',{'position_ms':position})
   else:request('toggle_pause')
   confirmed=request('state');remember(confirmed);return confirmed

@@ -253,7 +253,7 @@ export function Workspace({
         },
         body: JSON.stringify({
           mutations: pending,
-          cursor: stateRef.current.cursor,
+          cursor: fresh.confirmedItems ? fresh.cursor : 0,
         }),
       });
       const result = await response.json();

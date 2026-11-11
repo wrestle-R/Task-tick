@@ -31,12 +31,14 @@ export type State = {
   outbox: Mutation[];
   history: HistoryEntry[];
   cursor: number;
+  confirmedItems?: Item[];
 };
 export const emptyState = (): State => ({
   items: [],
   outbox: [],
   history: [],
   cursor: 0,
+  confirmedItems: [],
 });
 export const newId = (): string =>
   (
@@ -181,16 +183,21 @@ export function reconcile(
   cursor: number,
 ): State {
   const outbox = state.outbox.filter((m) => !accepted.includes(m.id));
-  const merged = new Map(state.items.map((i) => [i.id, i]));
-  for (const item of serverItems) merged.set(item.id, item);
+  const confirmed = new Map((state.confirmedItems ?? state.items).map((i) => [i.id, i]));
+  // An older acknowledgement may remove queued work, but cannot replace newer server data.
+  if (cursor >= state.cursor) {
+    for (const item of serverItems) confirmed.set(item.id, item);
+  }
   let next: State = {
     ...state,
-    items: [...merged.values()],
+    items: [...confirmed.values()],
+    confirmedItems: [...confirmed.values()],
     outbox: [],
-    cursor,
+    cursor: Math.max(state.cursor, cursor),
   };
   for (const pending of outbox) next = apply(next, pending);
   return { ...next, outbox };
+
 }
 export function visible(
   state: State,

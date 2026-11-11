@@ -46,3 +46,26 @@ test("input validation rejects untrusted fields and invalid ratings", () => {
   assert.throws(() => validatePatch({ owner: "somebody" } as never));
   assert.doesNotThrow(() => validatePatch({ rating: 4.5 }));
 });
+
+test("late acknowledgement removes its overlay without replacing newer server state", () => {
+  const mutation = createMutation("todo", { title: "local old edit" });
+  const local = apply(emptyState(), mutation);
+  const newer = { ...local.items[0], title: "newer server edit" };
+  const first = reconcile(local, [newer], [], 20);
+  assert.equal(first.items[0].title, "local old edit");
+  const late = reconcile(first, local.items, [mutation.id], 10);
+  assert.equal(late.cursor, 20);
+  assert.equal(late.items[0].title, "newer server edit");
+  assert.equal(late.outbox.length, 0);
+});
+test("confirmed state survives persistence and preserves edits still awaiting acknowledgement", () => {
+  const first = createMutation("todo", { title: "task" });
+  const local = apply(emptyState(), first);
+  const accepted = reconcile(local, local.items, [first.id], 1);
+  const later = createMutation("todo", { notes: "new local notes" }, first.itemId);
+  const persisted = JSON.parse(JSON.stringify(apply(accepted, later)));
+  const result = reconcile(persisted, [{ ...accepted.items[0], title: "server title" }], [], 2);
+  assert.equal(result.items[0].title, "server title");
+  assert.equal(result.items[0].notes, "new local notes");
+  assert.deepEqual(result.outbox.map(m => m.id), [later.id]);
+});

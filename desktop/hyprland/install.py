@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Install reversible integration into an existing illogical-impulse Quickshell setup."""
 from pathlib import Path
-import argparse,datetime,json,os,shutil,subprocess,difflib
+import argparse,datetime,json,os,shutil,subprocess,difflib,hashlib
 HOME=Path.home();BASE=Path(__file__).resolve().parent
 START='-- Tick and Done integration START';END='-- Tick and Done integration END'
 def block(source,text):
@@ -21,6 +21,21 @@ def restore_changes(current,before,installed):
   current=current.replace(replacement,original,1)
  return current
 
+def describe(path):
+ if path.is_symlink():return {'kind':'symlink','target':os.readlink(path)}
+ if path.is_file():return {'kind':'file','sha256':hashlib.sha256(path.read_bytes()).hexdigest()}
+ if path.exists():raise RuntimeError(f'Unexpected integration artifact type: {path}')
+ return {'kind':'absent'}
+def capture(path,backup):
+ description=describe(path)
+ if description['kind']=='file':
+  shutil.copy2(path,backup);description['backup']=str(backup)
+ return description
+def restore_artifact(path,description):
+ if path.exists() or path.is_symlink():path.unlink()
+ if description['kind']=='file':shutil.copy2(description['backup'],path)
+ elif description['kind']=='symlink':path.symlink_to(description['target'])
+
 def main():
  p=argparse.ArgumentParser();p.add_argument('--binary',type=Path,required=True);p.add_argument('--uninstall',action='store_true');args=p.parse_args()
  config=Path(os.environ.get('XDG_CONFIG_HOME',str(HOME/'.config')));state=Path(os.environ.get('XDG_STATE_HOME',str(HOME/'.local/state')))/'tick-and-done/integration';lib=HOME/'.local/lib/tick-and-done';binpath=HOME/'.local/bin/tick-and-done';sidebar=config/'quickshell/ii/modules/ii/sidebarLeft';content=sidebar/'SidebarLeftContent.qml';keys=config/'hypr/custom/keybinds.lua';execs=config/'hypr/custom/execs.lua'
@@ -29,7 +44,15 @@ def main():
   if 'changes' not in manifest:
    raise RuntimeError('Legacy integration backup has no installed snapshot. Preserve current files and review the original backups before uninstalling.')
   restored={target:restore_changes(Path(target).read_text(),change['before'],change['installed']) for target,change in manifest['changes'].items()}
+  artifacts=manifest.get('artifacts',{})
+  if not artifacts:raise RuntimeError('Artifact snapshots missing; review legacy backups before uninstalling.')
+  for target,change in artifacts.items():
+   if describe(Path(target))!=change['installed']:
+    raise RuntimeError(f'Integration artifact changed; preserve and resolve it before uninstalling: {target}')
+   if change['before']['kind']=='file' and not Path(change['before']['backup']).is_file():raise RuntimeError('Original artifact backup is missing')
   for target,value in restored.items():Path(target).write_text(value)
+  for target,change in artifacts.items():restore_artifact(Path(target),change['before'])
+  (state/'manifest.json').unlink()
   print('Restored backed-up integration files. Other app data is unchanged.');return
  binary=args.binary.resolve();assert binary.is_file(),'Build the desktop binary first';assert content.is_file() and keys.is_file() and execs.is_file(),'Supported Quickshell/Hyprland config not found'
  original=content.read_text();assert 'SidebarDashboard {}' in original or 'TickDashboard {}' in original,'Dashboard integration point changed; inspect before installing'
@@ -44,6 +67,16 @@ def main():
   baselines[target]=restore_changes(before,prior['before'],prior['installed']) if prior else before
  if previous and 'changes' not in previous:
   raise RuntimeError('Legacy integration exists. Review its original backups before upgrading; current configuration was not changed.')
+ applications=HOME/'.local/share/applications'
+ artifact_paths=[binpath,lib/'spotify.py',sidebar/'TickDashboard.qml',applications/'com.tickanddone.desktop.desktop']
+ artifact_baselines={}
+ for index,target in enumerate(artifact_paths):
+  prior=previous.get('artifacts',{}).get(str(target))
+  if prior:
+   if describe(target)!=prior['installed']:raise RuntimeError(f'Modified generated integration artifact: {target}')
+   artifact_baselines[str(target)]=prior['before']
+  elif previous:raise RuntimeError('Legacy artifact ownership is unknown; review backups before updating.')
+  else:artifact_baselines[str(target)]=capture(target,backupdir/f'artifact-{index}')
  lib.mkdir(parents=True,exist_ok=True);binpath.parent.mkdir(parents=True,exist_ok=True)
  if binpath.exists() and (not binpath.is_symlink() or binpath.resolve()!=binary):shutil.copy2(binpath,backupdir/'previous-tick-and-done')
  if binpath.exists() or binpath.is_symlink():binpath.unlink()
@@ -58,6 +91,6 @@ def main():
  for target,before in originals.items():
   current=Path(target).read_text()
   changes[target]={'before':baselines[target],'installed':current}
- (state/'manifest.json').write_text(json.dumps({'version':2,'backups':previous.get('backups',backups),'changes':changes},indent=2))
+ (state/'manifest.json').write_text(json.dumps({'version':3,'backups':previous.get('backups',backups),'changes':changes,'artifacts':{str(target):{'before':artifact_baselines[str(target)],'installed':describe(target)} for target in artifact_paths}},indent=2))
  print(f'Installed integration. Backups: {backupdir}. Existing local todos remain available until desktop sign-in. Reload Hyprland/Quickshell after verifying files.')
 if __name__=='__main__':main()
