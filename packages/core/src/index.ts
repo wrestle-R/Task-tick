@@ -227,3 +227,28 @@ export function duplicate(
       i.tmdbId === tmdbId,
   );
 }
+
+export type SyncPageRequest = { protocol: 2; mutations: Mutation[]; cursor: number; pullUntil?: number; historyAfter: number; historyUntil?: number };
+export type SyncPage = { items: Item[]; accepted: string[]; cursor: number; history: HistoryEntry[]; hasMore?: boolean; pullUntil?: number; historyHasMore?: boolean; historyAfter?: number; historyUntil?: number };
+export async function collectSyncPages(send: (request: SyncPageRequest) => Promise<SyncPage>, mutations: Mutation[], cursor: number, checkpoint?: (result: SyncPage) => Promise<void>): Promise<SyncPage> {
+  const items = new Map<string, Item>(), history = new Map<string, HistoryEntry>(), accepted = new Set<string>();
+  let requests = 0, historyAfter = 0;
+  for (let offset = 0; offset < Math.max(1, mutations.length); offset += 100) {
+    let batch = mutations.slice(offset, offset + 100), pullUntil: number | undefined, historyUntil: number | undefined;
+    let more: boolean;
+    do {
+      if (++requests > 1000) throw new Error("Sync is large; retry to continue. Your edits remain saved.");
+      const page = await send({ protocol: 2, mutations: batch, cursor, pullUntil, historyAfter, historyUntil });
+      if (page.cursor < cursor || (page.hasMore && page.cursor === cursor) || (page.historyHasMore && (page.historyAfter ?? 0) <= historyAfter)) throw new Error("Sync did not advance; your edits remain saved.");
+      if (batch.some(m => !page.accepted.includes(m.id))) throw new Error("Missing mutation acknowledgement; retry safely.");
+      for (const item of page.items) items.set(item.id, item);
+      for (const entry of page.history) history.set(entry.id, entry);
+      for (const id of page.accepted) accepted.add(id);
+      cursor = page.cursor; pullUntil = page.pullUntil;
+      historyAfter = page.historyAfter ?? historyAfter; historyUntil = page.historyUntil;
+      batch = []; more = !!(page.hasMore || page.historyHasMore);
+    } while (more);
+    await checkpoint?.({ items: [...items.values()], history: [...history.values()], accepted: [...accepted], cursor });
+  }
+  return { items: [...items.values()], history: [...history.values()], accepted: [...accepted], cursor };
+}

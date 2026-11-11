@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   apply,
+  collectSyncPages,
   complete,
   createMutation,
   emptyState,
@@ -68,4 +69,42 @@ test("confirmed state survives persistence and preserves edits still awaiting ac
   assert.equal(result.items[0].title, "server title");
   assert.equal(result.items[0].notes, "new local notes");
   assert.deepEqual(result.outbox.map(m => m.id), [later.id]);
+});
+
+test("paged sync drains mutation batches and independent item/history pages", async () => {
+  const mutations=Array.from({length:101},(_,i)=>createMutation("todo",{title:`Task ${i}`}));
+  const item=apply(emptyState(),mutations[0]).items[0];
+  const history=[{id:"h1",item,at:new Date().toISOString()},{id:"h2",item,at:new Date().toISOString()}];
+  const requests: Parameters<Parameters<typeof collectSyncPages>[0]>[0][]=[];
+  const result=await collectSyncPages(async request=>{
+    requests.push(request);
+    if(requests.length===1)return {items:[item],accepted:request.mutations.map(m=>m.id),cursor:1,history:[history[0]],hasMore:true,pullUntil:2,historyHasMore:true,historyAfter:1,historyUntil:2};
+    if(requests.length===2)return {items:[],accepted:[],cursor:2,history:[history[1]],hasMore:false,pullUntil:2,historyHasMore:false,historyAfter:2,historyUntil:2};
+    return {items:[],accepted:request.mutations.map(m=>m.id),cursor:3,history:[],historyAfter:2};
+  },mutations,0);
+  assert.deepEqual(requests.map(r=>r.mutations.length),[100,0,1]);
+  assert.equal(requests[1].pullUntil,2);assert.equal(requests[1].historyUntil,2);
+  assert.equal(requests[2].pullUntil,undefined);assert.equal(requests[2].historyUntil,undefined);
+  assert.equal(result.accepted.length,101);assert.equal(result.history.length,2);assert.equal(result.cursor,3);
+});
+test("failed or nonadvancing sync pages preserve the caller's durable queue", async () => {
+  const mutation=createMutation("todo",{title:"Keep me"});const state=apply(emptyState(),mutation);const before=JSON.stringify(state);
+  let calls=0;
+  await assert.rejects(collectSyncPages(async request=>{
+    if(++calls===2)throw Error("Network response lost");
+    return {items:[],accepted:[mutation.id],cursor:1,history:[],hasMore:true,pullUntil:2};
+  },state.outbox,0),/Network response lost/);
+  assert.equal(JSON.stringify(state),before);
+  await assert.rejects(collectSyncPages(async()=>({items:[],accepted:[],cursor:0,history:[],hasMore:true}),[],0),/did not advance/);
+});
+
+test("completed mutation batches checkpoint before a later network failure", async () => {
+  const mutations=Array.from({length:101},(_,i)=>createMutation("todo",{title:`Task ${i}`}));
+  let durable=mutations.reduce((s,m)=>apply(s,m),emptyState());let calls=0;
+  await assert.rejects(collectSyncPages(async request=>{
+    if(++calls===2)throw Error("Network interrupted");
+    return {items:durable.items.slice(0,100),accepted:request.mutations.map(m=>m.id),cursor:100,history:[]};
+  },mutations,0,async page=>{durable=reconcile(durable,page.items,page.accepted,page.cursor);}),/Network interrupted/);
+  assert.equal(durable.cursor,100);assert.deepEqual(durable.outbox.map(m=>m.id),[mutations[100].id]);
+  assert.equal(durable.items.length,101);
 });

@@ -1,5 +1,6 @@
 "use client";
 import React, { useCallback, useEffect, useRef, useState } from "react";
+import { collectSyncPages } from "@tick/core";
 import {
   createClient,
   type SupabaseClient,
@@ -239,25 +240,26 @@ export function Workspace({
       if (account !== accountRef.current) return;
       stateRef.current = fresh;
       setState(fresh);
-      const pending = fresh.outbox.slice(0, 100);
+      const pending = fresh.outbox;
       const { data: auth } = await client!.auth.getSession();
       if (account !== accountRef.current) return;
       if (auth.session && auth.session.user.id !== account) return;
       if (!auth.session)
         throw new Error("Sign in again to sync. Your edits are saved here.");
-      const response = await fetch(`${config.api}/api/sync`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${auth.session.access_token}`,
-        },
-        body: JSON.stringify({
-          mutations: pending,
-          cursor: fresh.confirmedItems ? fresh.cursor : 0,
-        }),
+      const result = await collectSyncPages(async (page) => {
+        if (account !== accountRef.current) throw new Error("Account changed during sync.");
+        const response = await fetch(`${config.api}/api/sync`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${auth.session!.access_token}` },
+          body: JSON.stringify(page),
+        });
+        const value = await response.json();
+        if (!response.ok) throw new Error(value.error ?? "Sync unavailable");
+        return value;
+      }, pending, fresh.confirmedItems ? fresh.cursor : 0, async (page) => {
+        if (account !== accountRef.current) throw new Error("Account changed during sync.");
+        await change(s => reconcile({ ...s, history: page.history }, page.items, page.accepted, page.cursor));
       });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error ?? "Sync unavailable");
       if (account !== accountRef.current) return;
       await change((s) =>
         reconcile(

@@ -80,14 +80,42 @@ class TickRepository private constructor(private val context: Context) : SQLiteO
   writableDatabase.beginTransaction();try{save(s);writableDatabase.setTransactionSuccessful()}finally{writableDatabase.endTransaction()};Widgets.refresh(context);Reminders.schedule(context);scheduleSync();return snapshot()
  }
  fun scheduleSync(){val scheduler=context.getSystemService(JobScheduler::class.java);scheduler.schedule(JobInfo.Builder(100,ComponentName(context,TickSyncJob::class.java)).setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY).setOverrideDeadline(1000).build());scheduler.schedule(JobInfo.Builder(101,ComponentName(context,TickSyncJob::class.java)).setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY).setPeriodic(15*60*1000L).setPersisted(true).build())}
- fun sync():JSONObject = synchronized(syncLock) {
-  val a=account()?:return snapshot();val token=accessToken();val before=synchronized(this){if(a!=account())return snapshot();read()};val pending=JSONArray();for(i in 0 until minOf(100,before.getJSONArray("outbox").length()))pending.put(before.getJSONArray("outbox").getJSONObject(i))
-  val result=request("${backend()}/api/sync",JSONObject().put("cursor",before.optLong("cursor")).put("mutations",pending),token)
-  synchronized(this){if(a!=account())return snapshot();val current=read();val accepted=result.getJSONArray("accepted");val ack=(0 until accepted.length()).map{accepted.getString(it)}.toSet();val remaining=JSONArray();val queue=current.getJSONArray("outbox");for(i in 0 until queue.length())if(!ack.contains(queue.getJSONObject(i).getString("id")))remaining.put(queue.getJSONObject(i));
+ private fun applyServerResult(owner:String,result:JSONObject) {
+  synchronized(this){if(owner!=account())return;val current=read();val accepted=result.getJSONArray("accepted");val ack=(0 until accepted.length()).map{accepted.getString(it)}.toSet();val remaining=JSONArray();val queue=current.getJSONArray("outbox");for(i in 0 until queue.length())if(!ack.contains(queue.getJSONObject(i).getString("id")))remaining.put(queue.getJSONObject(i));
    val map=linkedMapOf<String,JSONObject>();val local=current.getJSONArray("items");for(i in 0 until local.length())map[local.getJSONObject(i).getString("id")]=local.getJSONObject(i);val incoming=result.getJSONArray("items");for(i in 0 until incoming.length())map[incoming.getJSONObject(i).getString("id")]=incoming.getJSONObject(i)
    for(i in 0 until remaining.length()){val m=remaining.getJSONObject(i);val item=map[m.getString("itemId")]?:continue;if(!item.isNull("deletedAt")&&m.getString("action")=="patch")continue;val p=m.getJSONObject("patch");for(k in p.keys())item.put(k,p.get(k));if(m.getString("action")=="delete")item.put("deletedAt",Instant.now().toString());if(m.getString("action")=="restore")item.put("deletedAt",JSONObject.NULL)}
    current.put("items",JSONArray(map.values.toList())).put("outbox",remaining).put("cursor",result.getLong("cursor")).put("history",result.getJSONArray("history"));save(current)
-  };Widgets.refresh(context);Reminders.schedule(context);cachePosters();return snapshot()
+  }
+ }
+ private fun collectPages(owner:String,token:String,before:JSONObject):JSONObject {
+  val outgoing=before.getJSONArray("outbox");val items=linkedMapOf<String,JSONObject>();val history=linkedMapOf<String,JSONObject>();val accepted=linkedSetOf<String>();var cursor=before.optLong("cursor");var historyAfter=0L;var requests=0
+  var offset=0
+  do {
+   var batch=JSONArray();for(i in offset until minOf(offset+100,outgoing.length()))batch.put(outgoing.getJSONObject(i))
+   var pullUntil:Long?=null;var historyUntil:Long?=null
+   var more:Boolean
+   do {
+    check(account()==owner){"Account changed during sync"};check(++requests<=1000){"Sync is large; retry to continue. Your edits remain saved."}
+    val body=JSONObject().put("protocol",2).put("cursor",cursor).put("mutations",batch).put("historyAfter",historyAfter)
+    pullUntil?.let{body.put("pullUntil",it)};historyUntil?.let{body.put("historyUntil",it)}
+    val page=request("${backend()}/api/sync",body,token);val next=page.getLong("cursor");val nextHistory=page.optLong("historyAfter",historyAfter)
+    check(next>=cursor&&(!page.optBoolean("hasMore")||next>cursor)&&(!page.optBoolean("historyHasMore")||nextHistory>historyAfter)){"Sync did not advance; retry safely."}
+    val ack=page.getJSONArray("accepted");val ackSet=(0 until ack.length()).map{ack.getString(it)}.toSet()
+    for(i in 0 until batch.length())check(ackSet.contains(batch.getJSONObject(i).getString("id"))){"Missing mutation acknowledgement"}
+    accepted.addAll(ackSet)
+    for(key in listOf("items","history")){val values=page.getJSONArray(key);val target=if(key=="items")items else history;for(i in 0 until values.length()){val value=values.getJSONObject(i);target[value.getString("id")]=value}}
+    cursor=next;historyAfter=nextHistory;pullUntil=if(page.has("pullUntil"))page.getLong("pullUntil")else null;historyUntil=if(page.has("historyUntil"))page.getLong("historyUntil")else null
+    more=page.optBoolean("hasMore")||page.optBoolean("historyHasMore");batch=JSONArray()
+   }while(more)
+   applyServerResult(owner,JSONObject().put("items",JSONArray(items.values.toList())).put("history",JSONArray(history.values.toList())).put("accepted",JSONArray(accepted.toList())).put("cursor",cursor))
+   offset+=100
+  }while(offset<outgoing.length())
+  return JSONObject().put("items",JSONArray(items.values.toList())).put("history",JSONArray(history.values.toList())).put("accepted",JSONArray(accepted.toList())).put("cursor",cursor)
+ }
+ fun sync():JSONObject = synchronized(syncLock) {
+  val a=account()?:return snapshot();val token=accessToken();val before=synchronized(this){if(a!=account())return snapshot();read()};val result=collectPages(a,token,before)
+  applyServerResult(a,result)
+  Widgets.refresh(context);Reminders.schedule(context);cachePosters();return snapshot()
  }
  fun posterFile(path:String):java.io.File=java.io.File(context.cacheDir,"posters/"+java.security.MessageDigest.getInstance("SHA-256").digest(path.toByteArray()).joinToString(""){"%02x".format(it)}+".jpg")
  private fun cachePosters(){val items=read().getJSONArray("items");var fetched=0;for(i in 0 until items.length()){val item=items.getJSONObject(i);val path=item.optString("poster");if(item.optString("kind")!="movie"||!path.matches(Regex("^/[a-zA-Z0-9._-]+$")))continue;val file=posterFile(path);if(file.exists()||fetched>=10)continue;try{val con=URL("https://image.tmdb.org/t/p/w92$path").openConnection() as HttpURLConnection;con.connectTimeout=3000;con.readTimeout=3000;val data=con.inputStream.use{it.readNBytes(600000)};con.disconnect();if(data.isNotEmpty()&&data.size<600000){file.parentFile?.mkdirs();val temp=java.io.File(file.path+".tmp");temp.writeBytes(data);temp.renameTo(file);fetched++}}catch(_:Exception){}};if(fetched>0)Widgets.refresh(context)}

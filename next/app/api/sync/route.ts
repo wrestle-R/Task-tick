@@ -10,7 +10,6 @@ export async function POST(request: Request) {
     if (Number(request.headers.get("content-length") ?? 0) > 1_000_000)
       return Response.json({ error: "Request too large" }, { status: 413 });
     const { client, user } = await authenticated(request);
-    if (!allowRequest(`sync:${user.id}`, 120)) return Response.json({ error: "Too many sync requests. Try again shortly." }, { status: 429, headers: { "Retry-After": "60" } });
     const raw = await request.text();
     if (new TextEncoder().encode(raw).length > 1_000_000) return Response.json({ error: "Request too large" }, { status: 413 });
     const body = JSON.parse(raw);
@@ -21,6 +20,7 @@ export async function POST(request: Request) {
       body.cursor < 0
     )
       return Response.json({ error: "Invalid sync request" }, { status: 400 });
+    if (!allowRequest(`sync:${body.mutations.length ? 'write' : 'read'}:${user.id}`, body.mutations.length ? 120 : 1200)) return Response.json({ error: "Too many sync requests. Try again shortly." }, { status: 429, headers: { "Retry-After": "60" } });
     for (const m of body.mutations as Mutation[]) {
       if (
         !uuid.test(m.id) ||
@@ -34,9 +34,14 @@ export async function POST(request: Request) {
         return Response.json({ error: "Invalid mutation" }, { status: 400 });
       validatePatch(m.patch);
     }
-    const { data, error } = await client.rpc("tick_sync", {
+    if (body.protocol !== undefined && body.protocol !== 2) return Response.json({error:"Unsupported sync protocol"},{status:400});
+    for (const name of ["pullUntil", "historyAfter", "historyUntil"]) {
+      if (body[name] !== undefined && (!Number.isSafeInteger(body[name]) || body[name] < 0)) return Response.json({error:"Invalid page cursor"},{status:400});
+    }
+    const { data, error } = await client.rpc(body.protocol === 2 ? "tick_sync_v2" : "tick_sync", {
       mutations: body.mutations,
       after_cursor: body.cursor,
+      ...(body.protocol === 2 ? { until_cursor: body.pullUntil ?? null, history_after: body.historyAfter ?? 0, history_until: body.historyUntil ?? null } : {}),
     });
     if (error) throw new Error(error.message);
     return Response.json(data, { headers: { "Cache-Control": "no-store" } });
