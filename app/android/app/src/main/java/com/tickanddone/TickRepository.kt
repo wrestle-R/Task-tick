@@ -53,7 +53,7 @@ class TickRepository private constructor(private val context: Context) : SQLiteO
   return if(mode=="reset")"Check your email for a password reset link." else "Check your email to verify your account, then sign in."
  }
  private fun accessToken():String{val owner=account()?:throw IllegalStateException("Sign in to sync");var s=session();if(s.optLong("expires_at",0)<System.currentTimeMillis()/1000+60){s=request("${prefs.getString("supabase","")}/auth/v1/token?grant_type=refresh_token",JSONObject().put("refresh_token",s.getString("refresh_token")),key=prefs.getString("clientKey",null));synchronized(this){check(account()==owner){"Account changed. Sign in to sync."};writeSession(s)}};check(account()==owner){"Account changed. Sign in to sync."};return s.getString("access_token")}
- @Synchronized fun logout(){context.getSystemService(android.app.NotificationManager::class.java).cancel(201);prefs.edit().remove("account").remove("email").remove("session").commit();Widgets.refresh(context);Reminders.schedule(context)}
+ fun logout(){synchronized(this){context.getSystemService(android.app.NotificationManager::class.java).cancel(201);prefs.edit().remove("account").remove("email").remove("session").commit()};Widgets.refresh(context);Reminders.schedule(context)}
  private fun defaultItem(id:String,kind:String)=JSONObject().put("id",id).put("kind",kind).put("title","").put("done",false).put("notes","").put("priority",0).put("dueAt",JSONObject.NULL).put("parentId",JSONObject.NULL).put("position",System.currentTimeMillis()).put("rating",JSONObject.NULL).put("mediaType",JSONObject.NULL).put("tmdbId",JSONObject.NULL).put("poster",JSONObject.NULL).put("deletedAt",JSONObject.NULL)
  private fun patchItem(s:JSONObject,id:String,kind:String,patch:JSONObject,action:String="patch"){
   val items=s.getJSONArray("items");var target:JSONObject?=null;for(i in 0 until items.length()){val item=items.getJSONObject(i);if(item.getString("id")==id){target=item;break}}
@@ -64,7 +64,10 @@ class TickRepository private constructor(private val context: Context) : SQLiteO
   if(action=="delete")target.put("deletedAt",now);if(action=="restore")target.put("deletedAt",JSONObject.NULL)
   s.getJSONArray("outbox").put(JSONObject().put("id",UUID.randomUUID().toString()).put("itemId",id).put("kind",kind).put("action",action).put("patch",patch))
  }
- @Synchronized fun mutate(raw:String):JSONObject{
+ fun mutate(raw:String):JSONObject{
+  // Android 16 can synchronously load collection rows during updateAppWidget.
+  // Release the store monitor before notifying widgets: their reader needs it too.
+  val result=synchronized(this){
   require(account()!=null){"Open Tick and Done and sign in first"};val m=JSONObject(raw);val kind=m.optString("kind","todo");require(kind=="todo"||kind=="movie");val action=m.optString("action","patch");val s=read();val id=m.optString("id").ifEmpty{UUID.randomUUID().toString()};val patch=m.optJSONObject("patch")?:JSONObject()
   if(patch.has("title"))require(patch.getString("title").trim().isNotEmpty()&&patch.getString("title").length<=500){"Enter a title (up to 500 characters)"}
   if(action=="undo"){
@@ -77,7 +80,8 @@ class TickRepository private constructor(private val context: Context) : SQLiteO
    patchItem(s,id,kind,patch,action);for(child in ids.drop(1))patchItem(s,child,"todo",JSONObject().put("done",true))
    if(action=="delete"){val children=mutableListOf<String>();for(i in 0 until items.length()){val item=items.getJSONObject(i);if(item.optString("parentId")==id&&item.isNull("deletedAt"))children.add(item.getString("id"))};for(child in children)patchItem(s,child,"todo",JSONObject(),"delete")}
   }
-  writableDatabase.beginTransaction();try{save(s);writableDatabase.setTransactionSuccessful()}finally{writableDatabase.endTransaction()};Widgets.refresh(context);Reminders.schedule(context);scheduleSync();return snapshot()
+  writableDatabase.beginTransaction();try{save(s);writableDatabase.setTransactionSuccessful()}finally{writableDatabase.endTransaction()};snapshot()
+  };Widgets.refresh(context);Reminders.schedule(context);scheduleSync();return result
  }
  fun scheduleSync(){val scheduler=context.getSystemService(JobScheduler::class.java);scheduler.schedule(JobInfo.Builder(100,ComponentName(context,TickSyncJob::class.java)).setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY).setOverrideDeadline(1000).build());scheduler.schedule(JobInfo.Builder(101,ComponentName(context,TickSyncJob::class.java)).setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY).setPeriodic(15*60*1000L).setPersisted(true).build())}
  private fun applyServerResult(owner:String,result:JSONObject) {

@@ -71,9 +71,12 @@ export default function App() {
       if (pendingLink.current) {
         const link = pendingLink.current;
         setKind(link.includes('/movie') ? 'movie' : 'todo');
+        setView('active');
+        setSettings(false);
         const id = link.match(/[?&]item=([^&]+)/)?.[1];
-        if (id)
-          setSelected(value.state.items.find((i: Item) => i.id === id) ?? null);
+        setSelected(id
+          ? value.state.items.find((i: Item) => i.id === id) ?? null
+          : null);
         pendingLink.current = null;
       }
     } catch (e) {
