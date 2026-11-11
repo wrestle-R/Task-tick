@@ -18,6 +18,7 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: python3 docs/tests/spotify.py
+      - run: python3 docs/tests/integration-install.py
       - run: npm run typecheck
       - run: npm run build
   android:

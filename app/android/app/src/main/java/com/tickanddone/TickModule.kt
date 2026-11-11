@@ -9,7 +9,7 @@ import java.util.concurrent.Executors
 class TickModule(private val context:ReactApplicationContext):ReactContextBaseJavaModule(context){
  private val executor=Executors.newSingleThreadExecutor();override fun getName()="TickStore"
  private fun run(p:Promise,f:()->Any?){executor.execute{try{p.resolve(f())}catch(e:Exception){p.reject("TICK_ERROR",e.message,e)}}}
- @ReactMethod fun snapshot(p:Promise)=run(p){TickRepository.get(context).snapshot().toString()}
+ @ReactMethod fun snapshot(p:Promise)=run(p){Reminders.notifyDue(context);TickRepository.get(context).snapshot().toString()}
  @ReactMethod fun mutate(value:String,p:Promise)=run(p){TickRepository.get(context).mutate(value).toString()}
  @ReactMethod fun authenticate(mode:String,email:String,password:String,backend:String,p:Promise)=run(p){TickRepository.get(context).authenticate(mode,email,password,backend)}
  @ReactMethod fun sync(p:Promise)=run(p){TickRepository.get(context).sync().toString()}

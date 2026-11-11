@@ -29,3 +29,9 @@ Android device discovery currently reports that the SDK is unavailable to the De
 2026-11-10 verification update: database protocol integration suite passed and rolled back its data. Latest Linux deb/AppImage packages built successfully; packaged binary started and its IPC correctly requires sign-in. Latest Android debug APK installed successfully on the connected phone. Device UI automation remains blocked by Device panel SDK discovery. GitHub main implementation commit is pushed and triggered Vercel production deployment and CI.
 
 CI run 42865969433 passed web, Rust and Android checks for commit 49f28fc. Emulator provisioning is being repaired to enable isolated native acceptance.
+
+## Six-phase completion run (2026-11-11)
+
+Implementation resumed against the six-phase completion plan. New source fixes guard web/native outgoing sync against account transitions, clear account-owned Android notifications on signout/sign-in, check overdue reminders during native refresh, and reverse known integration config changes without replacing unrelated later edits. Three installer regression tests cover preserved edits and conflict refusal. Legacy integration manifests still require reviewed migration; generated artifact cleanup is not yet complete.
+
+These changes do not close account/mailbox, widget, reminder-delivery, desktop or release acceptance gates. No new native release is published.

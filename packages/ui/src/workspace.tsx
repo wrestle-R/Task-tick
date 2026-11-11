@@ -174,6 +174,7 @@ export function Workspace({
     setReady(false);
     const account = session?.user.id ?? "";
     accountRef.current = account;
+    stateRef.current = emptyState();
     setState(emptyState());
     setSelected(null);
     void storage.activate?.(account || null);
@@ -240,6 +241,8 @@ export function Workspace({
       setState(fresh);
       const pending = fresh.outbox.slice(0, 100);
       const { data: auth } = await client!.auth.getSession();
+      if (account !== accountRef.current) return;
+      if (auth.session && auth.session.user.id !== account) return;
       if (!auth.session)
         throw new Error("Sign in again to sync. Your edits are saved here.");
       const response = await fetch(`${config.api}/api/sync`, {
