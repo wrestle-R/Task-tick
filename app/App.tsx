@@ -143,7 +143,7 @@ export default function App() {
   ) {
     try {
       const value = JSON.parse(
-        await native.mutate(JSON.stringify({ kind: k, id, action, patch })),
+        await native.mutate(JSON.stringify({ kind: k, id, action, patch, expectedAccount: snap.account })),
       );
       setSnap(value);
       setUndo(value.state.undo ?? null);
@@ -280,7 +280,7 @@ export default function App() {
     const moves = planMove(items, items[index].id, reordered[target + 1]?.id ?? null);
     void (async () => {
       try {
-        const value = JSON.parse(await native.reorder(JSON.stringify({kind, moves})));
+        const value = JSON.parse(await native.reorder(JSON.stringify({kind, moves, expectedAccount: snap.account})));
         setSnap(value);
         setError('');
       } catch (e) { setError((e as Error).message); }

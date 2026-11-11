@@ -24,7 +24,7 @@ Add either widget from the launcher's widget picker. Widget + opens compact add;
 
 ## Linux / Hyprland
 
-Install WebKitGTK 4.1, GTK 3, libayatana-appindicator, notify-send and the usual Rust build toolchain. `npm run desktop` starts development; `npm run tauri -w desktop -- build` packages the app.
+Install WebKitGTK 4.1, GTK 3, libayatana-appindicator, a desktop notification service on the session D-Bus and the usual Rust build toolchain. `npm run desktop` starts development; `npm run tauri -w desktop -- build` packages the app.
 
 After building, optional integration into illogical-impulse Quickshell:
 
@@ -53,3 +53,7 @@ Tags run checks and build draft releases. Validate Android installation/update, 
 New installs record config and generated-artifact snapshots. Updates preserve the first baseline; uninstall reverses only known changes and restores prior files. Modified managed sections/artifacts cause a conflict before config changes. Original backup directories are retained privately.
 
 For a reviewed legacy installation, run the installer once with `--adopt-legacy` and the binary currently targeted by the existing app symlink. This explicitly confirms the recognized files belong to this integration. Adoption checks the managed config edits, exact desktop launcher, binary link and shipped helper/QML hashes. It refuses unknown files, missing original backups or backups that already contain managed integration. After adoption, the regular install/update/uninstall path applies. Do not use this flag to suppress a conflict with personal edits.
+
+The sidebar IPC state response includes `_account`; writes must echo that value as `expectedAccount`. Upgrade the desktop binary and bundled QML together. Stale or older unbound writes are rejected with a refresh message. Desktop reminders use the standard session D-Bus notification service; no `notify-send` executable is required.
+
+The hosted recovery integration in `docs/tests/password-recovery.mjs` requires an authorized project admin key supplied through a private file path (`TICK_TEST_SUPABASE_ADMIN_KEY_FILE`) or process environment. It creates and removes its own fixture; it never changes an existing user's password and does not substitute for actual mailbox delivery evidence.

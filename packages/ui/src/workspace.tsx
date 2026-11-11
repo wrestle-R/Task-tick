@@ -179,12 +179,10 @@ export function Workspace({
     stateRef.current = emptyState();
     setState(emptyState());
     setSelected(null);
-    void storage.activate?.(account || null);
-    if (account)
-      storage
-        .load(account)
+    void Promise.resolve(storage.activate?.(account || null))
+        .then(() => account && live ? storage.load(account) : null)
         .then((s) => {
-          if (live) {
+          if (live && s) {
             stateRef.current = s;
             setState(s);
             setReady(true);

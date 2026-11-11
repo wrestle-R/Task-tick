@@ -19,6 +19,7 @@ use tauri::{
 struct Store {
     db: Mutex<Connection>,
     active: Mutex<Option<String>>,
+    notification: Mutex<Option<u32>>,
 }
 fn empty() -> Value {
     json!({"items":[],"outbox":[],"history":[],"cursor":0})
@@ -58,10 +59,68 @@ fn save_state(account: String, value: Value, store: State<Store>) -> Result<(), 
     }
     save(&db, &account, &value)
 }
+trait Notifications {
+    fn show(&self, previous: u32, title: &str) -> Result<u32, String>;
+    fn close(&self, id: u32) -> Result<(), String>;
+}
+struct DbusNotifications;
+impl Notifications for DbusNotifications {
+    fn show(&self, previous: u32, title: &str) -> Result<u32, String> {
+        let connection = dbus::blocking::Connection::new_session().map_err(|e| e.to_string())?;
+        let proxy = connection.with_proxy(
+            "org.freedesktop.Notifications",
+            "/org/freedesktop/Notifications",
+            std::time::Duration::from_secs(3),
+        );
+        let hints = std::collections::HashMap::<&str, dbus::arg::Variant<&str>>::new();
+        let (id,): (u32,) = proxy
+            .method_call(
+                "org.freedesktop.Notifications",
+                "Notify",
+                (
+                    "Tick and Done",
+                    previous,
+                    "",
+                    title,
+                    "Open Tick and Done to see your list.",
+                    Vec::<&str>::new(),
+                    hints,
+                    -1i32,
+                ),
+            )
+            .map_err(|e| e.to_string())?;
+        Ok(id)
+    }
+    fn close(&self, id: u32) -> Result<(), String> {
+        let connection = dbus::blocking::Connection::new_session().map_err(|e| e.to_string())?;
+        let proxy = connection.with_proxy(
+            "org.freedesktop.Notifications",
+            "/org/freedesktop/Notifications",
+            std::time::Duration::from_secs(3),
+        );
+        proxy
+            .method_call("org.freedesktop.Notifications", "CloseNotification", (id,))
+            .map_err(|e| e.to_string())
+    }
+}
+fn change_account(
+    store: &Store,
+    account: Option<String>,
+    notifications: &impl Notifications,
+) -> Result<(), String> {
+    let mut active = store.active.lock().map_err(|e| e.to_string())?;
+    *active = None;
+    let mut current = store.notification.lock().map_err(|e| e.to_string())?;
+    if let Some(id) = *current {
+        notifications.close(id)?;
+    }
+    *current = None;
+    *active = account;
+    Ok(())
+}
 #[tauri::command]
 fn activate_account(account: Option<String>, store: State<Store>) -> Result<(), String> {
-    *store.active.lock().map_err(|e| e.to_string())? = account;
-    Ok(())
+    change_account(&store, account, &DbusNotifications)
 }
 #[tauri::command]
 fn get_reminders(store: State<Store>) -> Result<bool, String> {
@@ -93,7 +152,11 @@ fn set_reminders(enabled: bool, store: State<Store>) -> Result<(), String> {
     Ok(())
 }
 fn notify_due(store: &Store) -> Result<(), String> {
-    let account = match store.active.lock().map_err(|e| e.to_string())?.clone() {
+    notify_due_with(store, &DbusNotifications)
+}
+fn notify_due_with(store: &Store, notifications: &impl Notifications) -> Result<(), String> {
+    let active = store.active.lock().map_err(|e| e.to_string())?;
+    let account = match active.clone() {
         Some(a) => a,
         None => return Ok(()),
     };
@@ -153,19 +216,11 @@ fn notify_due(store: &Store) -> Result<(), String> {
     } else {
         format!("{} unfinished tasks are due", due.len())
     };
-    let status = std::process::Command::new("notify-send")
-        .args([
-            "--app-name=Tick and Done",
-            "--",
-            &title,
-            "Open Tick and Done to see your list.",
-        ])
-        .status()
-        .map_err(|e| e.to_string())?;
-    if status.success() {
-        for (id, date, _) in due {
-            db.execute("INSERT INTO notified(account,id,due_at) VALUES(?1,?2,?3) ON CONFLICT(account,id) DO UPDATE SET due_at=excluded.due_at",params![account,id,date]).map_err(|e|e.to_string())?;
-        }
+    let mut current = store.notification.lock().map_err(|e| e.to_string())?;
+    let id = notifications.show(current.unwrap_or(0), &title)?;
+    *current = Some(id);
+    for (id, date, _) in due {
+        db.execute("INSERT INTO notified(account,id,due_at) VALUES(?1,?2,?3) ON CONFLICT(account,id) DO UPDATE SET due_at=excluded.due_at",params![account,id,date]).map_err(|e|e.to_string())?;
     }
     Ok(())
 }
@@ -177,16 +232,20 @@ fn socket_path() -> PathBuf {
     .join("tick-and-done.sock")
 }
 fn ipc(store: &Store, request: Value) -> Result<Value, String> {
-    let account = store
-        .active
-        .lock()
-        .map_err(|e| e.to_string())?
+    // Keep the account boundary locked through this operation. A command from an
+    // old sidebar view must never become an add/edit in a newly active account.
+    let active = store.active.lock().map_err(|e| e.to_string())?;
+    let account = active
         .clone()
         .ok_or("Open Tick and Done and sign in first")?;
+    let action = request["action"].as_str().unwrap_or("state");
+    if action != "state" && request["expectedAccount"].as_str() != Some(account.as_str()) {
+        return Err("Account changed. Refresh the sidebar and try again.".into());
+    }
     let db = store.db.lock().map_err(|e| e.to_string())?;
     let mut state = load(&db, &account)?;
-    let action = request["action"].as_str().unwrap_or("state");
     if action == "state" {
+        state["_account"] = json!(account);
         return Ok(state);
     }
     let kind = request["kind"]
@@ -246,6 +305,7 @@ fn ipc(store: &Store, request: Value) -> Result<Value, String> {
         .push(mutation);
     state["outbox"].as_array_mut().unwrap().extend(extra);
     save(&db, &account, &state)?;
+    state["_account"] = json!(account);
     Ok(state)
 }
 fn main() {
@@ -275,7 +335,7 @@ fn main() {
  .setup(|app|{
   let dir=app.path().app_data_dir()?;std::fs::create_dir_all(&dir)?;std::fs::set_permissions(&dir,std::fs::Permissions::from_mode(0o700))?;
   let db=Connection::open(dir.join("tick.sqlite3"))?;db.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; CREATE TABLE IF NOT EXISTS accounts(id TEXT PRIMARY KEY,value TEXT NOT NULL); CREATE TABLE IF NOT EXISTS reminders(account TEXT PRIMARY KEY,enabled INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS notified(account TEXT NOT NULL,id TEXT NOT NULL,due_at TEXT NOT NULL,PRIMARY KEY(account,id));")?;
-  app.manage(Store{db:Mutex::new(db),active:Mutex::new(None)});
+  app.manage(Store{db:Mutex::new(db),active:Mutex::new(None),notification:Mutex::new(None)});
   if std::env::args().any(|a|a=="--background"){if let Some(window)=app.get_webview_window("main"){window.hide().ok();}}
   let show=MenuItem::with_id(app,"show","Open Tick and Done",true,None::<&str>)?;let quit=MenuItem::with_id(app,"quit","Quit",true,None::<&str>)?;let menu=Menu::with_items(app,&[&show,&quit])?;
   TrayIconBuilder::with_id("tick-and-done").icon(tauri::image::Image::from_bytes(include_bytes!("../icons/icon.png"))?).tooltip("Tick and Done").menu(&menu).on_menu_event(|app,event|{if event.id.as_ref()=="quit"{app.exit(0)}else if let Some(w)=app.get_webview_window("main"){w.show().ok();w.set_focus().ok();}}).build(app)?;
@@ -292,11 +352,12 @@ mod tests {
     use super::*;
     fn store() -> Store {
         let db = Connection::open_in_memory().unwrap();
-        db.execute_batch("CREATE TABLE accounts(id TEXT PRIMARY KEY,value TEXT NOT NULL)")
+        db.execute_batch("CREATE TABLE accounts(id TEXT PRIMARY KEY,value TEXT NOT NULL); CREATE TABLE reminders(account TEXT PRIMARY KEY,enabled INTEGER NOT NULL); CREATE TABLE notified(account TEXT,id TEXT,due_at TEXT,PRIMARY KEY(account,id));")
             .unwrap();
         Store {
             db: Mutex::new(db),
             active: Mutex::new(Some("account-a".into())),
+            notification: Mutex::new(None),
         }
     }
     #[test]
@@ -304,7 +365,7 @@ mod tests {
         let store = store();
         let parent = ipc(
             &store,
-            json!({"action":"add","kind":"todo","title":"Parent"}),
+            json!({"action":"add","expectedAccount":"account-a","kind":"todo","title":"Parent"}),
         )
         .unwrap();
         let id = parent["items"][0]["id"].clone();
@@ -314,7 +375,11 @@ mod tests {
         child["parentId"] = id.clone();
         state["items"].as_array_mut().unwrap().push(child);
         save(&store.db.lock().unwrap(), "account-a", &state).unwrap();
-        let result = ipc(&store, json!({"action":"toggle","kind":"todo","id":id})).unwrap();
+        let result = ipc(
+            &store,
+            json!({"action":"toggle","expectedAccount":"account-a","kind":"todo","id":id}),
+        )
+        .unwrap();
         assert!(result["items"]
             .as_array()
             .unwrap()
@@ -331,7 +396,7 @@ mod tests {
         let store = store();
         ipc(
             &store,
-            json!({"action":"add","kind":"todo","title":"Private"}),
+            json!({"action":"add","expectedAccount":"account-a","kind":"todo","title":"Private"}),
         )
         .unwrap();
         *store.active.lock().unwrap() = None;
@@ -341,5 +406,97 @@ mod tests {
             ipc(&store, json!({"action":"state"})).unwrap()["items"],
             json!([])
         );
+    }
+    #[test]
+    fn stale_sidebar_commands_cannot_cross_accounts() {
+        let store = store();
+        let old = ipc(&store, json!({"action":"state"})).unwrap();
+        assert_eq!(old["_account"], "account-a");
+        *store.active.lock().unwrap() = Some("account-b".into());
+        assert!(ipc(&store, json!({"action":"add","expectedAccount":old["_account"],"kind":"todo","title":"Private A title"})).is_err());
+        assert!(ipc(
+            &store,
+            json!({"action":"add","kind":"todo","title":"Unbound command"})
+        )
+        .is_err());
+        assert_eq!(
+            load(&store.db.lock().unwrap(), "account-b").unwrap()["items"],
+            json!([])
+        );
+        let new = ipc(&store, json!({"action":"state"})).unwrap();
+        let saved = ipc(&store, json!({"action":"add","expectedAccount":new["_account"],"kind":"todo","title":"B task"})).unwrap();
+        assert_eq!(saved["items"][0]["title"], "B task");
+        assert_eq!(saved["_account"], "account-b");
+    }
+
+    #[derive(Default)]
+    struct RecordedNotifications {
+        shown: Mutex<Vec<String>>,
+        closed: Mutex<Vec<u32>>,
+        fail: Mutex<bool>,
+    }
+    impl Notifications for RecordedNotifications {
+        fn show(&self, _: u32, title: &str) -> Result<u32, String> {
+            if *self.fail.lock().unwrap() {
+                return Err("Delivery unavailable".into());
+            }
+            self.shown.lock().unwrap().push(title.into());
+            Ok(42)
+        }
+        fn close(&self, id: u32) -> Result<(), String> {
+            self.closed.lock().unwrap().push(id);
+            Ok(())
+        }
+    }
+    #[test]
+    fn reminders_retry_failures_summarize_once_and_clear_on_account_change() {
+        let store = store();
+        let notifications = RecordedNotifications::default();
+        let due = Utc::now() - chrono::Duration::minutes(1);
+        let state = json!({"items":[{"id":"one","title":"First","done":false,"deletedAt":null,"dueAt":due.to_rfc3339()},{"id":"two","title":"Second","done":false,"deletedAt":null,"dueAt":due.to_rfc3339()},{"id":"done","title":"Already done","done":true,"deletedAt":null,"dueAt":due.to_rfc3339()}],"outbox":[],"history":[],"cursor":0});
+        save(&store.db.lock().unwrap(), "account-a", &state).unwrap();
+        notify_due_with(&store, &notifications).unwrap();
+        assert!(
+            notifications.shown.lock().unwrap().is_empty(),
+            "Disabled desktop must stay quiet"
+        );
+        store
+            .db
+            .lock()
+            .unwrap()
+            .execute("INSERT INTO reminders VALUES('account-a',1)", [])
+            .unwrap();
+        *notifications.fail.lock().unwrap() = true;
+        assert!(notify_due_with(&store, &notifications).is_err());
+        assert_eq!(
+            store
+                .db
+                .lock()
+                .unwrap()
+                .query_row("SELECT count(*) FROM notified", [], |r| r.get::<_, i64>(0))
+                .unwrap(),
+            0
+        );
+        *notifications.fail.lock().unwrap() = false;
+        notify_due_with(&store, &notifications).unwrap();
+        notify_due_with(&store, &notifications).unwrap();
+        assert_eq!(
+            *notifications.shown.lock().unwrap(),
+            vec!["2 unfinished tasks are due"]
+        );
+        change_account(&store, Some("account-b".into()), &notifications).unwrap();
+        assert_eq!(*notifications.closed.lock().unwrap(), vec![42]);
+        notify_due_with(&store, &notifications).unwrap();
+        assert_eq!(notifications.shown.lock().unwrap().len(), 1);
+    }
+    #[test]
+    #[ignore = "requires an authorized live desktop notification service"]
+    fn desktop_notification_service_roundtrip() {
+        let notifications = DbusNotifications;
+        let id = notifications
+            .show(0, "Tick and Done reminder check")
+            .unwrap();
+        assert!(id > 0);
+        notifications.close(id).unwrap();
     }
 }
