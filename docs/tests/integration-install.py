@@ -22,8 +22,8 @@ class Lifecycle(unittest.TestCase):
   (custom/'keybinds.lua').write_text('-- personal keys\n');(custom/'execs.lua').write_text('-- personal startup\n')
   binary=root/'built-app';binary.write_text('fixture binary')
   return config,content,binary
- def run_installer(self,root,config,binary,uninstall=False):
-  with patch.object(installer,'HOME',root),patch.dict(os.environ,{'XDG_CONFIG_HOME':str(config),'XDG_STATE_HOME':str(root/'.state')}),patch.object(sys,'argv',['install','--binary',str(binary)]+(['--uninstall'] if uninstall else [])):
+ def run_installer(self,root,config,binary,uninstall=False,adopt=False):
+  with patch.object(installer,'HOME',root),patch.dict(os.environ,{'XDG_CONFIG_HOME':str(config),'XDG_STATE_HOME':str(root/'.state')}),patch.object(sys,'argv',['install','--binary',str(binary)]+(['--uninstall'] if uninstall else [])+(['--adopt-legacy'] if adopt else [])):
    installer.main()
  def test_install_reinstall_uninstall_preserves_user_data_and_edits(self):
   with tempfile.TemporaryDirectory() as folder:
@@ -46,4 +46,19 @@ class Lifecycle(unittest.TestCase):
    with self.assertRaises(RuntimeError):self.run_installer(root,config,binary,True)
    self.assertEqual(content.read_text(),before)
    self.assertEqual(helper.read_text(),'user modification')
+ def test_verified_legacy_adoption_preserves_later_config_edits(self):
+  with tempfile.TemporaryDirectory() as folder:
+   root=Path(folder);config,content,binary=self.setup_tree(root);self.run_installer(root,config,binary)
+   manifest=root/'.state/tick-and-done/integration/manifest.json';data=json.loads(manifest.read_text());manifest.write_text(json.dumps({'backups':data['backups']}))
+   content.write_text(content.read_text()+'// personal change\n')
+   self.run_installer(root,config,binary,adopt=True);self.run_installer(root,config,binary,uninstall=True)
+   self.assertEqual(content.read_text(),'SidebarDashboard {}\n// personal change\n')
+   self.assertFalse((root/'.local/lib/tick-and-done/spotify.py').exists())
+ def test_legacy_adoption_refuses_custom_helper_without_touching_config(self):
+  with tempfile.TemporaryDirectory() as folder:
+   root=Path(folder);config,content,binary=self.setup_tree(root);self.run_installer(root,config,binary)
+   manifest=root/'.state/tick-and-done/integration/manifest.json';data=json.loads(manifest.read_text());manifest.write_text(json.dumps({'backups':data['backups']}))
+   helper=root/'.local/lib/tick-and-done/spotify.py';helper.write_text('custom helper');before=content.read_text()
+   with self.assertRaises(RuntimeError):self.run_installer(root,config,binary,adopt=True)
+   self.assertEqual(content.read_text(),before);self.assertEqual(helper.read_text(),'custom helper')
 if __name__=='__main__':unittest.main()

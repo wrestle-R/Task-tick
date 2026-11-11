@@ -47,3 +47,9 @@ The Spotify helper expects the user's installed Spotify TUI with its own login/p
 Set GitHub environment `native-release` secrets `TICK_ANDROID_KEYSTORE_BASE64`, `TICK_ANDROID_STORE_PASSWORD`, `TICK_ANDROID_KEY_ALIAS`, and `TICK_ANDROID_KEY_PASSWORD` from the project's stable production signing identity. Keep its offline backup private. Never reuse the generated debug identity for releases. Local release builds use `TICK_ANDROID_KEYSTORE` as a file path and the other three settings as environment variables.
 
 Tags run checks and build draft releases. Validate Android installation/update, Linux offline launch, reminders and widgets before manually publishing the draft. No tag or production release has been published during initial implementation.
+
+### Upgrading a legacy integration
+
+New installs record config and generated-artifact snapshots. Updates preserve the first baseline; uninstall reverses only known changes and restores prior files. Modified managed sections/artifacts cause a conflict before config changes. Original backup directories are retained privately.
+
+For a reviewed legacy installation, run the installer once with `--adopt-legacy` and the binary currently targeted by the existing app symlink. This explicitly confirms the recognized files belong to this integration. Adoption checks the managed config edits, exact desktop launcher, binary link and shipped helper/QML hashes. It refuses unknown files, missing original backups or backups that already contain managed integration. After adoption, the regular install/update/uninstall path applies. Do not use this flag to suppress a conflict with personal edits.
