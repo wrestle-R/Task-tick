@@ -55,7 +55,20 @@ try {
   assert.equal(expired.items[0].title, 'Deleted item', 'Old trash content must be removed');
   const ancient = await sync([mutation({title:'Ancient offline edit'})]);
   assert.ok(ancient.items[0].deletedAt, 'An old offline device must not resurrect purged trash');
-  console.log('PASS: seven-day expiry, tombstone retention, replay/lost response, field merges, server-order conflicts/history, deletion/stale recovery, restore, RLS/account isolation, mutation ID integrity.');
+  // Order v1 stays per-item: a stale client never uploads an authoritative ID list.
+  const orderedIds = [randomUUID(), randomUUID(), randomUUID()];
+  const makeOrder = (itemId, patch) => ({id:randomUUID(), itemId, kind:'todo', action:'patch', patch});
+  await sync(orderedIds.map((itemId,n)=>makeOrder(itemId,{title:`Order ${n}`,position:1024})));
+  await sync([makeOrder(orderedIds[0],{position:4096,notes:'Independent notes'})]);
+  const laterMove=makeOrder(orderedIds[0],{position:512});
+  const orderResult=await sync([laterMove]);
+  const moved=orderResult.items.find(i=>i.id===orderedIds[0]);
+  assert.equal(moved.position,512,'Later server-accepted move wins the same rank field');
+  assert.equal(moved.notes,'Independent notes','Moves preserve other fields');
+  assert.ok(orderResult.items.some(i=>i.id===orderedIds[2]),'Concurrent inserts remain included');
+  const orderReplay=await sync([laterMove]);
+  assert.equal(orderReplay.cursor,orderResult.cursor,'Move replay is idempotent');
+  console.log('PASS: order ranks/move replay/concurrent inclusion, seven-day expiry, tombstone retention, replay/lost response, field merges, server-order conflicts/history, deletion/stale recovery, restore, RLS/account isolation, mutation ID integrity.');
 } finally {
   await db.query('rollback');
   await db.end();

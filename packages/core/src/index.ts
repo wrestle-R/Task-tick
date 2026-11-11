@@ -199,6 +199,29 @@ export function reconcile(
   return { ...next, outbox };
 
 }
+// Order v1: numeric rank, then UUID bytes (never locale-dependent).
+export function compareItems(a: Pick<Item, "position" | "id">, b: Pick<Item, "position" | "id">): number {
+  return a.position - b.position || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+}
+export function planMove(items: Item[], movedId: string, beforeId: string | null): { itemId: string; position: number }[] {
+  const ordered = [...items].sort(compareItems);
+  const moved = ordered.find(i => i.id === movedId);
+  if (!moved || movedId === beforeId) return [];
+  const remaining = ordered.filter(i => i.id !== movedId);
+  const target = beforeId === null ? remaining.length : remaining.findIndex(i => i.id === beforeId);
+  if (target < 0) return [];
+  remaining.splice(target, 0, moved);
+  if (remaining.every((i, n) => i.id === ordered[n].id)) return [];
+  const left = remaining[target - 1]?.position, right = remaining[target + 1]?.position;
+  const rank = left === undefined ? (right ?? 0) - 1024
+    : right === undefined ? left + 1024 : left / 2 + right / 2;
+  if (Number.isFinite(rank) && (left === undefined || rank > left) && (right === undefined || rank < right))
+    return [{ itemId: movedId, position: rank }];
+  // Exhausted/equal ranks: rewrite only this visible list, in one local transaction.
+  // Concurrent/new items are never replaced by an authoritative array of IDs.
+  return remaining.flatMap((item, n) => item.position === (n + 1) * 1024 ? [] : [{ itemId: item.id, position: (n + 1) * 1024 }]);
+}
+
 export function visible(
   state: State,
   kind: Kind,
@@ -212,7 +235,7 @@ export function visible(
           ? !!i.deletedAt && Date.parse(i.deletedAt) > Date.now() - 7 * 86400000
           : !i.deletedAt && i.done === (view === "done")),
     )
-    .sort((a, b) => a.position - b.position);
+    .sort(compareItems);
 }
 export function duplicate(
   items: Item[],

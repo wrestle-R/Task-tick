@@ -29,6 +29,7 @@ import {
 } from "lucide-react";
 import {
   apply,
+  planMove,
   complete,
   createMutation,
   defaults,
@@ -885,18 +886,10 @@ export function Workspace({
                     onDragOver={(e) => e.preventDefault()}
                     onDrop={(e) => {
                       e.preventDefault();
-                      const moved = state.items.find(
-                        (i) => i.id === e.dataTransfer.getData("text/plain"),
-                      );
-                      if (moved && moved.id !== item.id) {
-                        const before =
-                          items[items.findIndex((i) => i.id === item.id) - 1];
-                        void patch(moved, {
-                          position: before
-                            ? (before.position + item.position) / 2
-                            : item.position - 1,
-                        });
-                      }
+                      const movedId = e.dataTransfer.getData("text/plain");
+                      void change((current) => planMove(visible(current, kind, "active"), movedId, item.id)
+                        .reduce((next, move) => apply(next, createMutation(kind, { position: move.position }, move.itemId)), current))
+                        .then(() => sync());
                     }}
                   >
                     {view === "trash" ? (

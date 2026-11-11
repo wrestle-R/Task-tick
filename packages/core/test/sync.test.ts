@@ -2,6 +2,9 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   apply,
+  compareItems,
+  planMove,
+  visible,
   collectSyncPages,
   complete,
   createMutation,
@@ -107,4 +110,39 @@ test("completed mutation batches checkpoint before a later network failure", asy
   },mutations,0,async page=>{durable=reconcile(durable,page.items,page.accepted,page.cursor);}),/Network interrupted/);
   assert.equal(durable.cursor,100);assert.deepEqual(durable.outbox.map(m=>m.id),[mutations[100].id]);
   assert.equal(durable.items.length,101);
+});
+
+test("equal ranks converge independently of response and insertion order", () => {
+  let state = emptyState();
+  for (const id of ["00000000-0000-4000-8000-000000000003", "00000000-0000-4000-8000-000000000001", "00000000-0000-4000-8000-000000000002"])
+    state = apply(state, createMutation("todo", {title: id, position: 1}, id));
+  const expected = state.items.map(i => i.id).sort();
+  assert.deepEqual(visible(state, "todo").map(i => i.id), expected);
+  assert.deepEqual(visible({...state, items: [...state.items].reverse()}, "todo").map(i => i.id), expected);
+});
+test("moves exclude the dragged row from its destination neighbours", () => {
+  let state = emptyState();
+  for (const rank of [100, 200, 300, 400]) state = apply(state, createMutation("todo", {title: String(rank), position: rank}));
+  const [a,b,c,d] = state.items;
+  const move = planMove(state.items, a.id, c.id);
+  assert.equal(move.length, 1);
+  assert.equal(move[0].position, 250);
+  const moved = apply(state, createMutation("todo", {position: move[0].position}, a.id));
+  assert.deepEqual(visible(moved, "todo").map(i => i.id), [b.id,a.id,c.id,d.id]);
+  assert.deepEqual(planMove(state.items, a.id, b.id), []);
+});
+test("exhausted rank spacing rebalances without removing concurrent inserts or edits", () => {
+  let state = emptyState();
+  for (const [title, position] of [["a",1],["b",1+Number.EPSILON],["c",2]] as const)
+    state = apply(state, createMutation("todo", {title,position}));
+  const [a,b,c] = state.items;
+  const moves = planMove(state.items, c.id, b.id);
+  assert.equal(moves.length, 3);
+  const added = createMutation("todo", {title:"concurrent",position:1});
+  state = apply(state, added);
+  state = apply(state, createMutation("todo", {notes:"independent edit"}, a.id));
+  for (const move of moves) state = apply(state, createMutation("todo", {position:move.position}, move.itemId));
+  assert.deepEqual(visible(state,"todo").map(i=>i.title), ["concurrent","a","c","b"]);
+  assert.equal(state.items.find(i=>i.id===a.id)?.notes,"independent edit");
+  assert.deepEqual([...state.items].reverse().sort(compareItems).map(i=>i.id), visible(state,"todo").map(i=>i.id));
 });

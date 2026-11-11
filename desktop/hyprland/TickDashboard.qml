@@ -16,7 +16,7 @@ FocusScope {
     property bool connected: false
     property string errorText: ""
     readonly property string executable: Quickshell.env("HOME") + "/.local/bin/tick-and-done"
-    readonly property var items: (state.items || []).filter(i => i.kind === root.kind && !i.done && !i.deletedAt).sort((a,b) => a.position-b.position)
+    readonly property var items: (state.items || []).filter(i => i.kind === root.kind && !i.done && !i.deletedAt).sort((a,b) => a.position-b.position || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
     function focusActiveItem() { if (connected) input.forceActiveFocus(); else legacy.item?.focusActiveItem(); }
     function refresh() { if (!read.running) { read.command = [executable, "--ipc", JSON.stringify({action:"state"})]; read.running = true; } }
     function mutate(value) { if (write.running) return; write.command = [executable, "--ipc", JSON.stringify(value)]; write.running = true; }

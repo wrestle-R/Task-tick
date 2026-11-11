@@ -83,6 +83,20 @@ class TickRepository private constructor(private val context: Context) : SQLiteO
   writableDatabase.beginTransaction();try{save(s);writableDatabase.setTransactionSuccessful()}finally{writableDatabase.endTransaction()};snapshot()
   };Widgets.refresh(context);Reminders.schedule(context);scheduleSync();return result
  }
+ // A rank rebalance and every corresponding outbox entry commit together.
+ fun reorder(raw:String):JSONObject {
+  val result=synchronized(this){
+   require(account()!=null){"Sign in first"};val request=JSONObject(raw);val kind=request.getString("kind");require(kind=="todo"||kind=="movie")
+   val s=read();val items=s.getJSONArray("items");val moves=request.getJSONArray("moves");val ids=mutableSetOf<String>();val byId=(0 until items.length()).associate{items.getJSONObject(it).getString("id") to items.getJSONObject(it)}
+   for(n in 0 until moves.length()){
+    val move=moves.getJSONObject(n);val id=move.getString("itemId");val rank=move.getDouble("position");require(rank.isFinite()&&ids.add(id)){"Invalid order"}
+    val item=byId[id]
+    require(item!=null&&item.getString("kind")==kind&&item.isNull("deletedAt")&&!item.optBoolean("done")){"The list changed; retry the move"}
+   }
+   for(n in 0 until moves.length()){val move=moves.getJSONObject(n);patchItem(s,move.getString("itemId"),kind,JSONObject().put("position",move.getDouble("position")))}
+   writableDatabase.beginTransaction();try{save(s);writableDatabase.setTransactionSuccessful()}finally{writableDatabase.endTransaction()};snapshot()
+  };Widgets.refresh(context);scheduleSync();return result
+ }
  fun scheduleSync(){val scheduler=context.getSystemService(JobScheduler::class.java);scheduler.schedule(JobInfo.Builder(100,ComponentName(context,TickSyncJob::class.java)).setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY).setOverrideDeadline(1000).build());scheduler.schedule(JobInfo.Builder(101,ComponentName(context,TickSyncJob::class.java)).setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY).setPeriodic(15*60*1000L).setPersisted(true).build())}
  private fun applyServerResult(owner:String,result:JSONObject) {
   synchronized(this){if(owner!=account())return;val current=read();val accepted=result.getJSONArray("accepted");val ack=(0 until accepted.length()).map{accepted.getString(it)}.toSet();val remaining=JSONArray();val queue=current.getJSONArray("outbox");for(i in 0 until queue.length())if(!ack.contains(queue.getJSONObject(i).getString("id")))remaining.put(queue.getJSONObject(i));

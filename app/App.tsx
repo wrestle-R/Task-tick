@@ -21,6 +21,7 @@ import {
   useColorScheme,
 } from 'react-native';
 import type { Item, Kind, State, Fields } from '../packages/core/src/index';
+import { compareItems, planMove } from '../packages/core/src/index';
 import { themes, themeGeometry } from '../packages/core/src/theme';
 const Text = (props: React.ComponentProps<typeof NativeText>) => <NativeText {...props} style={[{fontFamily: 'DMSans'}, props.style]} />;
 const TextInput = (props: React.ComponentProps<typeof NativeTextInput>) => <NativeTextInput {...props} style={[{fontFamily: 'DMSans'}, props.style]} />;
@@ -266,8 +267,9 @@ export default function App() {
           ? !!i.deletedAt && Date.parse(i.deletedAt) > Date.now() - 7 * 86400000
           : !i.deletedAt && i.done === (view === 'done'),
       )
-      .sort((a, b) => a.position - b.position);
+      .sort(compareItems);
   function reorder(index: number, delta: number) {
+    if (view !== 'active') return;
     const target = Math.max(
       0,
       Math.min(items.length - 1, index + Math.round(delta / 80)),
@@ -275,22 +277,14 @@ export default function App() {
     if (index === target) return;
     const reordered = items.filter((_, i) => i !== index);
     reordered.splice(target, 0, items[index]);
-    const before = reordered[target - 1],
-      after = reordered[target + 1];
-    void mutate(
-      kind,
-      {
-        position:
-          before && after
-            ? (before.position + after.position) / 2
-            : before
-              ? before.position + 1000
-              : after
-                ? after.position - 1000
-                : Date.now(),
-      },
-      items[index].id,
-    );
+    const moves = planMove(items, items[index].id, reordered[target + 1]?.id ?? null);
+    void (async () => {
+      try {
+        const value = JSON.parse(await native.reorder(JSON.stringify({kind, moves})));
+        setSnap(value);
+        setError('');
+      } catch (e) { setError((e as Error).message); }
+    })();
   }
   const label = (text: string) => (
     <Text style={[s.label, { color: c.muted }]}>{text}</Text>
