@@ -645,7 +645,7 @@ export function Workspace({
                   Password
                   <input
                     required
-                    minLength={8}
+                    minLength={authMode === "login" ? 1 : 8}
                     type="password"
                     autoComplete={
                       authMode === "login" ? "current-password" : "new-password"

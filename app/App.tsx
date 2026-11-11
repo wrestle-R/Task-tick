@@ -337,7 +337,7 @@ export default function App() {
                 secureTextEntry
                 value={password}
                 onChangeText={setPassword}
-                placeholder="At least 8 characters"
+                placeholder={authMode === 'login' ? 'Your password' : 'At least 8 characters'}
                 placeholderTextColor={c.muted}
               />
             </>
@@ -346,7 +346,7 @@ export default function App() {
             disabled={
               busy ||
               !email ||
-              (authMode !== 'reset' && password.length < 8)
+              (authMode === 'login' ? password.length === 0 : authMode !== 'reset' && password.length < 8)
             }
             style={s.primary}
             onPress={() => void auth()}
