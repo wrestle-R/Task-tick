@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
 import {
   Alert,
   Animated,
@@ -11,7 +11,6 @@ import {
   PermissionsAndroid,
   Platform,
   Pressable,
-  SafeAreaView,
   ScrollView,
   StatusBar,
   StyleSheet,
@@ -20,17 +19,20 @@ import {
   View,
   useColorScheme,
 } from 'react-native';
+import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import type { Item, Kind, State, Fields } from '../packages/core/src/index';
 import { compareItems, planMove } from '../packages/core/src/index';
 import { themes, themeGeometry } from '../packages/core/src/theme';
-const Text = (props: React.ComponentProps<typeof NativeText>) => <NativeText {...props} style={[{fontFamily: 'DMSans'}, props.style]} />;
-const TextInput = (props: React.ComponentProps<typeof NativeTextInput>) => <NativeTextInput {...props} style={[{fontFamily: 'DMSans'}, props.style]} />;
+const TextTone = createContext<string>(themes.light.ink);
+const Text = (props: React.ComponentProps<typeof NativeText>) => { const color = useContext(TextTone); return <NativeText {...props} style={[{fontFamily: 'DMSans', color}, props.style]} />; };
+const TextInput = (props: React.ComponentProps<typeof NativeTextInput>) => { const color = useContext(TextTone); return <NativeTextInput {...props} style={[{fontFamily: 'DMSans', color}, props.style]} />; };
 type Snapshot = {
   state: State;
   account: string | null;
   email: string | null;
   backend: string;
   preciseAlarms: boolean;
+  appearance: 'system' | 'light' | 'dark';
 };
 const native = NativeModules.TickStore;
 const blank: Snapshot = {
@@ -39,14 +41,19 @@ const blank: Snapshot = {
   email: null,
   backend: '',
   preciseAlarms: false,
+  appearance: native?.appearance ?? 'system',
 };
 export default function App() {
-  const dark = useColorScheme() === 'dark';
+  return <SafeAreaProvider><TickApp /></SafeAreaProvider>;
+}
+function TickApp() {
+  const systemDark = useColorScheme() === 'dark';
+  const [snap, setSnap] = useState(blank);
+  const dark = snap.appearance === 'dark' || (snap.appearance === 'system' && systemDark);
   const palette = themes[dark ? 'dark' : 'light'];
   const c = { ...palette, bg: palette.paper };
   const s = makeStyles(palette);
-  const [snap, setSnap] = useState(blank),
-    [kind, setKind] = useState<Kind>('todo'),
+  const [kind, setKind] = useState<Kind>('todo'),
     [view, setView] = useState<'active' | 'done' | 'trash' | 'history'>(
       'active',
     ),
@@ -63,9 +70,9 @@ export default function App() {
     [undo, setUndo] = useState<any>(null),
     [subtask, setSubtask] = useState('');
   const pendingLink = useRef<string | null>(null);
-  async function refresh() {
+  async function refresh(lifecycle = false) {
     try {
-      const value = JSON.parse(await native.snapshot());
+      const value = JSON.parse(await (lifecycle ? native.resume() : native.snapshot()));
       setSnap(value);
       const u = value.state.undo;
       setUndo(u && u.until > Date.now() ? u : null);
@@ -103,7 +110,7 @@ export default function App() {
       setError('Native storage module unavailable. Rebuild the Android app.');
       return;
     }
-    void refresh();
+    void refresh(true);
     Linking.getInitialURL().then(url => {
       if (url) {
         pendingLink.current = url;
@@ -116,7 +123,7 @@ export default function App() {
     });
     const active = AppState.addEventListener('change', state => {
       if (state === 'active') {
-        void refresh();
+        void refresh(true);
         void sync();
       }
     });
@@ -207,7 +214,7 @@ export default function App() {
   async function logout() {
     const finish = async () => {
       await native.logout();
-      setSnap(blank);
+      setSnap({ ...blank, appearance: snap.appearance });
       setSettings(false);
       setSelected(null);
       setUndo(null);
@@ -291,11 +298,12 @@ export default function App() {
   );
   const inputStyle = [s.input, { borderColor: c.line, color: c.ink }];
   return (
+    <TextTone.Provider value={c.ink}>
     <SafeAreaView style={[s.root, { backgroundColor: c.bg }]}>
       <StatusBar barStyle={dark ? 'light-content' : 'dark-content'} />
       <View style={s.header}>
         <Text style={[s.brand, { color: c.ink }]}>
-          <Text style={s.logo}>✓</Text> tick & done.
+          <Text style={s.logo}>✓</Text> Task-tick
         </Text>
         <Pressable
           accessibilityLabel="Settings"
@@ -624,10 +632,11 @@ export default function App() {
         animationType="slide"
         onRequestClose={() => setSelected(null)}
       >
+        <SafeAreaProvider>
         <SafeAreaView style={[s.root, { backgroundColor: c.bg }]}>
           <View style={s.sheetHeader}>
             <Text style={[s.eyebrow, { color: c.muted }]}>A LITTLE DETAIL</Text>
-            <Pressable onPress={() => setSelected(null)}>
+            <Pressable accessibilityRole="button" accessibilityLabel="Close item editor" hitSlop={12} style={{ minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' }} onPress={() => setSelected(null)}>
               <Text style={{ fontSize: 24, color: c.ink }}>×</Text>
             </Pressable>
           </View>
@@ -780,16 +789,18 @@ export default function App() {
             </ScrollView>
           )}
         </SafeAreaView>
+        </SafeAreaProvider>
       </Modal>
       <Modal
         visible={settings}
         animationType="slide"
         onRequestClose={() => setSettings(false)}
       >
+        <SafeAreaProvider>
         <SafeAreaView style={[s.root, { backgroundColor: c.bg }]}>
           <View style={s.sheetHeader}>
             <Text style={[s.eyebrow, { color: c.muted }]}>MAKE IT YOURS</Text>
-            <Pressable onPress={() => setSettings(false)}>
+            <Pressable accessibilityRole="button" accessibilityLabel="Close settings" hitSlop={12} style={{ minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' }} onPress={() => setSettings(false)}>
               <Text style={{ fontSize: 24, color: c.ink }}>×</Text>
             </Pressable>
           </View>
@@ -798,6 +809,19 @@ export default function App() {
             <Text style={[s.description, { color: c.muted }]}>
               {snap.email ?? 'Sign in to keep everything together.'}
             </Text>
+            {label('APPEARANCE')}
+            <View accessibilityRole="radiogroup" style={{ flexDirection: 'row', gap: 10, marginBottom: 26 }}>
+              {(['system', 'light', 'dark'] as const).map(mode => (
+                <Pressable key={mode} accessibilityRole="radio" accessibilityLabel={`${mode[0].toUpperCase() + mode.slice(1)} appearance`} accessibilityState={{ checked: snap.appearance === mode }}
+                  style={{ paddingVertical: 13, paddingHorizontal: 18, borderRadius: themeGeometry.controlRadius, backgroundColor: snap.appearance === mode ? c.accent : c.surface, borderWidth: 1, borderColor: c.line }}
+                  onPress={async () => {
+                    try { setSnap(JSON.parse(await native.setAppearance(mode))); setError(''); }
+                    catch (e) { setError((e as Error).message); }
+                  }}>
+                  <Text style={{ color: snap.appearance === mode ? c.accentInk : c.ink }}>{mode[0].toUpperCase() + mode.slice(1)}</Text>
+                </Pressable>
+              ))}
+            </View>
             {label('REMINDER HEALTH')}
             <Text style={[s.description, { color: c.muted }]}>
               {snap.preciseAlarms
@@ -835,8 +859,10 @@ export default function App() {
             )}
           </ScrollView>
         </SafeAreaView>
+        </SafeAreaProvider>
       </Modal>
     </SafeAreaView>
+    </TextTone.Provider>
   );
 }
 function TaskRow({

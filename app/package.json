@@ -1,6 +1,6 @@
 {
-  "name": "TickAndDone",
-  "version": "0.0.1",
+  "name": "task-tick-mobile",
+  "version": "0.1.0",
   "private": true,
   "scripts": {
     "android": "react-native run-android",

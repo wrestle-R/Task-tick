@@ -1,6 +1,6 @@
 /* Shared palette: generated from packages/core/src/theme.ts. */
 :root { --radius-control: 7px; --radius-panel: 18px; }
-:root {
+:root, [data-theme="light"] {
   --paper: #faf9f6;
   --surface: #ffffff;
   --sidebar: #f1f0eb;
@@ -13,7 +13,7 @@
   --error: #9b4039;
   color-scheme: light;
 }
-:root[data-theme="dark"] {
+:root[data-theme="dark"], [data-theme="dark"] {
   --paper: #171a17;
   --surface: #20241e;
   --sidebar: #1c201b;

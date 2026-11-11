@@ -1,9 +1,9 @@
 import Link from "next/link";
+import { MarketingSite } from "../site-navigation";
 export const metadata = { title: "The details" };
 export default function Docs() {
   return (
-    <main className="document-page">
-      <Link href="/">← Tick and Done</Link>
+    <MarketingSite><main className="document-page">
       <h1>A little guide.</h1>
       <p>
         One todo list. One watchlist. Your own space on Android, Linux, and the
@@ -61,6 +61,6 @@ export default function Docs() {
         . Only attach diagnostic information you are comfortable sharing
         publicly. Never include passwords or personal task contents.
       </p>
-    </main>
+    </main></MarketingSite>
   );
 }

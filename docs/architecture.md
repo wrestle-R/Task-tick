@@ -1,6 +1,6 @@
 # Architecture
 
-Tick and Done has one general todo list and one Movies list per account. Movies includes film and TV titles without episode tracking. Users sign up with verified email/password accounts.
+Task-tick has one general todo list and one Movies list per account. Movies includes film and TV titles without episode tracking. Users sign up with verified email/password accounts.
 
 ## Client boundaries
 

@@ -1,4 +1,4 @@
-# Tick and Done
+# Task-tick
 
 Read docs/architecture.md and docs/progress/README.md before changing behaviour. Keep the repository root clean. Android is bare React Native, never Expo. Two widget types only: Todos and Movies.
 

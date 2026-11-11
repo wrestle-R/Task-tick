@@ -1,4 +1,4 @@
-# Tick and Done
+# Task-tick
 
 Todos, a watchlist, and two home-screen widgets. A little less to keep in your head.
 

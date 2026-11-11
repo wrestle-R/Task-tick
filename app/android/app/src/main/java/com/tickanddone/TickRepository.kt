@@ -29,12 +29,14 @@ class TickRepository private constructor(private val context: Context) : SQLiteO
  override fun onCreate(db:SQLiteDatabase){db.execSQL("CREATE TABLE accounts(id TEXT PRIMARY KEY,state TEXT NOT NULL)")}
  override fun onUpgrade(db:SQLiteDatabase,old:Int,new:Int){}
  override fun onConfigure(db:SQLiteDatabase){db.enableWriteAheadLogging();db.execSQL("PRAGMA synchronous=FULL")}
+ fun appearance():String=prefs.getString("appearance","system").takeIf{it in listOf("system","light","dark")}?:"system"
+ fun setAppearance(value:String):JSONObject{require(value in listOf("system","light","dark"));check(prefs.edit().putString("appearance",value).commit()){"Could not save appearance"};return snapshot()}
  fun account():String?=prefs.getString("account",null)
  fun backend():String="https://task-tick-beige.vercel.app"
  private fun empty()=JSONObject("{\"items\":[],\"outbox\":[],\"history\":[],\"cursor\":0}")
  @Synchronized fun read():JSONObject {val a=account()?:return empty();readableDatabase.rawQuery("SELECT state FROM accounts WHERE id=?",arrayOf(a)).use{if(it.moveToFirst())return JSONObject(it.getString(0))};return empty()}
  private fun save(s:JSONObject){val a=account()?:throw IllegalStateException("Sign in first");writableDatabase.insertWithOnConflict("accounts",null,ContentValues().apply{put("id",a);put("state",s.toString())},SQLiteDatabase.CONFLICT_REPLACE)}
- @Synchronized fun snapshot():JSONObject=JSONObject().put("state",read()).put("email",prefs.getString("email",null)).put("account",account()).put("backend",backend()).put("preciseAlarms",Reminders.canScheduleExact(context))
+ @Synchronized fun snapshot():JSONObject=JSONObject().put("state",read()).put("email",prefs.getString("email",null)).put("account",account()).put("backend",backend()).put("preciseAlarms",Reminders.canScheduleExact(context)).put("appearance",appearance())
  private fun key():javax.crypto.SecretKey{val ks=KeyStore.getInstance("AndroidKeyStore").apply{load(null)};return (ks.getKey("tick-session",null) as? javax.crypto.SecretKey)?:KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES,"AndroidKeyStore").apply{init(KeyGenParameterSpec.Builder("tick-session",KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT).setBlockModes(KeyProperties.BLOCK_MODE_GCM).setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE).build())}.generateKey()}
  private fun writeSession(value:JSONObject){val c=Cipher.getInstance("AES/GCM/NoPadding");c.init(Cipher.ENCRYPT_MODE,key());val data=c.iv+c.doFinal(value.toString().toByteArray());prefs.edit().putString("session",Base64.encodeToString(data,Base64.NO_WRAP)).commit()}
  private fun session():JSONObject{val bytes=Base64.decode(prefs.getString("session",null)?:throw IllegalStateException("Sign in again to sync. Saved edits are safe."),Base64.NO_WRAP);val c=Cipher.getInstance("AES/GCM/NoPadding");c.init(Cipher.DECRYPT_MODE,key(),GCMParameterSpec(128,bytes.copyOfRange(0,12)));return JSONObject(String(c.doFinal(bytes.copyOfRange(12,bytes.size))))}
@@ -63,7 +65,7 @@ class TickRepository private constructor(private val context: Context) : SQLiteO
   check(account()==owner&&authGeneration==generation){"Account changed. Sign in to sync."};return s.getString("access_token")
  }
 
- fun logout(){synchronized(this){authGeneration++;context.getSystemService(android.app.NotificationManager::class.java).cancel(201);prefs.edit().remove("account").remove("email").remove("session").commit()};Widgets.refresh(context);Reminders.schedule(context)}
+ fun logout(){synchronized(this){authGeneration++;context.getSystemService(JobScheduler::class.java).apply{cancel(100);cancel(101)};context.getSystemService(android.app.NotificationManager::class.java).cancel(201);prefs.edit().remove("account").remove("email").remove("session").commit()};Widgets.refresh(context);Reminders.schedule(context)}
  private fun defaultItem(id:String,kind:String)=JSONObject().put("id",id).put("kind",kind).put("title","").put("done",false).put("notes","").put("priority",0).put("dueAt",JSONObject.NULL).put("parentId",JSONObject.NULL).put("position",System.currentTimeMillis()).put("rating",JSONObject.NULL).put("mediaType",JSONObject.NULL).put("tmdbId",JSONObject.NULL).put("poster",JSONObject.NULL).put("deletedAt",JSONObject.NULL)
  private fun patchItem(s:JSONObject,id:String,kind:String,patch:JSONObject,action:String="patch"){
   val items=s.getJSONArray("items");var target:JSONObject?=null;for(i in 0 until items.length()){val item=items.getJSONObject(i);if(item.getString("id")==id){target=item;break}}
@@ -78,8 +80,12 @@ class TickRepository private constructor(private val context: Context) : SQLiteO
   // Android 16 can synchronously load collection rows during updateAppWidget.
   // Release the store monitor before notifying widgets: their reader needs it too.
   val result=synchronized(this){
-  require(account()!=null){"Open Tick and Done and sign in first"};val m=JSONObject(raw);val kind=m.optString("kind","todo");require(kind=="todo"||kind=="movie");if(m.has("expectedAccount"))check(m.optString("expectedAccount")==account()){"Account changed. Refresh your list."};val action=m.optString("action","patch");val s=read();val id=m.optString("id").ifEmpty{UUID.randomUUID().toString()};val patch=m.optJSONObject("patch")?:JSONObject()
-  if(action!="undo"&&m.has("id")&&m.optString("id").isNotEmpty())require((0 until s.getJSONArray("items").length()).any{s.getJSONArray("items").getJSONObject(it).getString("id")==id}){"This item is no longer available. Refresh your list."}
+  require(account()!=null){"Open Task-tick and sign in first"};val m=JSONObject(raw);val kind=m.optString("kind","todo");require(kind=="todo"||kind=="movie");if(m.has("expectedAccount"))check(m.optString("expectedAccount")==account()){"Account changed. Refresh your list."};val action=m.optString("action","patch");val s=read();val id=m.optString("id").ifEmpty{UUID.randomUUID().toString()};val patch=m.optJSONObject("patch")?:JSONObject()
+  if(action!="undo"&&m.has("id")&&m.optString("id").isNotEmpty()){
+   val items=s.getJSONArray("items");val existing=(0 until items.length()).map{items.getJSONObject(it)}.find{it.getString("id")==id}
+   if(existing==null){require(action=="patch"&&m.optBoolean("create")&&patch.has("title")&&id.length==36&&UUID.fromString(id).toString()==id){"This item is no longer available. Refresh your list."}}
+   else require(existing.getString("kind")==kind){"This item belongs to a different list"}
+  }
   if(patch.has("title"))require(patch.getString("title").trim().isNotEmpty()&&patch.getString("title").length<=500){"Enter a title (up to 500 characters)"}
   if(action=="undo"){
    val u=s.optJSONObject("undo");if(u!=null&&u.optLong("until")>System.currentTimeMillis()){val previous=u.getJSONArray("items");for(i in 0 until previous.length()){val p=previous.getJSONObject(i);patchItem(s,p.getString("id"),p.getString("kind"),JSONObject().put("done",p.getBoolean("done")))}};s.remove("undo")
@@ -108,6 +114,7 @@ class TickRepository private constructor(private val context: Context) : SQLiteO
    writableDatabase.beginTransaction();try{save(s);writableDatabase.setTransactionSuccessful()}finally{writableDatabase.endTransaction()};snapshot()
   };Widgets.refresh(context);scheduleSync();return result
  }
+ fun resume():JSONObject{if(account()!=null){scheduleSync();Reminders.schedule(context);Reminders.notifyDue(context)};return snapshot()}
  fun scheduleSync(){val scheduler=context.getSystemService(JobScheduler::class.java);scheduler.schedule(JobInfo.Builder(100,ComponentName(context,TickSyncJob::class.java)).setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY).setOverrideDeadline(1000).build());scheduler.schedule(JobInfo.Builder(101,ComponentName(context,TickSyncJob::class.java)).setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY).setPeriodic(15*60*1000L).setPersisted(true).build())}
  private fun applyServerResult(owner:String,generation:Long,result:JSONObject) {
   synchronized(this){if(owner!=account()||authGeneration!=generation)return;val current=read();val accepted=result.getJSONArray("accepted");val ack=(0 until accepted.length()).map{accepted.getString(it)}.toSet();val remaining=JSONArray();val queue=current.getJSONArray("outbox");for(i in 0 until queue.length())if(!ack.contains(queue.getJSONObject(i).getString("id")))remaining.put(queue.getJSONObject(i));

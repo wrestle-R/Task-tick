@@ -6,4 +6,18 @@
         <item name="android:editTextBackground">@drawable/rn_edit_text_material</item>
     </style>
 
+    <style name="QuickComposeTheme" parent="@android:style/Theme.Material.Dialog.NoActionBar">
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:backgroundDimEnabled">true</item>
+        <item name="android:windowSoftInputMode">adjustResize|stateAlwaysVisible</item>
+        <item name="android:windowMinWidthMajor">0%</item>
+        <item name="android:windowMinWidthMinor">0%</item>
+    </style>
+    <style name="QuickComposeLightDialog" parent="@android:style/Theme.Material.Light.Dialog.Alert">
+        <item name="android:colorAccent">#354422</item>
+    </style>
+    <style name="QuickComposeDarkDialog" parent="@android:style/Theme.Material.Dialog.Alert">
+        <item name="android:colorAccent">#c6e482</item>
+    </style>
 </resources>

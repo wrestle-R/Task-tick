@@ -78,11 +78,11 @@ impl Notifications for DbusNotifications {
                 "org.freedesktop.Notifications",
                 "Notify",
                 (
-                    "Tick and Done",
+                    "Task-tick",
                     previous,
                     "",
                     title,
-                    "Open Tick and Done to see your list.",
+                    "Open Task-tick to see your list.",
                     Vec::<&str>::new(),
                     hints,
                     -1i32,
@@ -237,7 +237,7 @@ fn ipc(store: &Store, request: Value) -> Result<Value, String> {
     let active = store.active.lock().map_err(|e| e.to_string())?;
     let account = active
         .clone()
-        .ok_or("Open Tick and Done and sign in first")?;
+        .ok_or("Open Task-tick and sign in first")?;
     let action = request["action"].as_str().unwrap_or("state");
     if action != "state" && request["expectedAccount"].as_str() != Some(account.as_str()) {
         return Err("Account changed. Refresh the sidebar and try again.".into());
@@ -324,7 +324,7 @@ fn main() {
                 print!("{}", output);
             }
             Err(_) => {
-                println!("{{\"error\":\"Open Tick and Done first\"}}");
+                println!("{{\"error\":\"Open Task-tick first\"}}");
                 std::process::exit(1)
             }
         }
@@ -337,14 +337,14 @@ fn main() {
   let db=Connection::open(dir.join("tick.sqlite3"))?;db.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; CREATE TABLE IF NOT EXISTS accounts(id TEXT PRIMARY KEY,value TEXT NOT NULL); CREATE TABLE IF NOT EXISTS reminders(account TEXT PRIMARY KEY,enabled INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS notified(account TEXT NOT NULL,id TEXT NOT NULL,due_at TEXT NOT NULL,PRIMARY KEY(account,id));")?;
   app.manage(Store{db:Mutex::new(db),active:Mutex::new(None),notification:Mutex::new(None)});
   if std::env::args().any(|a|a=="--background"){if let Some(window)=app.get_webview_window("main"){window.hide().ok();}}
-  let show=MenuItem::with_id(app,"show","Open Tick and Done",true,None::<&str>)?;let quit=MenuItem::with_id(app,"quit","Quit",true,None::<&str>)?;let menu=Menu::with_items(app,&[&show,&quit])?;
-  TrayIconBuilder::with_id("tick-and-done").icon(tauri::image::Image::from_bytes(include_bytes!("../icons/icon.png"))?).tooltip("Tick and Done").menu(&menu).on_menu_event(|app,event|{if event.id.as_ref()=="quit"{app.exit(0)}else if let Some(w)=app.get_webview_window("main"){w.show().ok();w.set_focus().ok();}}).build(app)?;
+  let show=MenuItem::with_id(app,"show","Open Task-tick",true,None::<&str>)?;let quit=MenuItem::with_id(app,"quit","Quit",true,None::<&str>)?;let menu=Menu::with_items(app,&[&show,&quit])?;
+  TrayIconBuilder::with_id("tick-and-done").icon(tauri::image::Image::from_bytes(include_bytes!("../icons/icon.png"))?).tooltip("Task-tick").menu(&menu).on_menu_event(|app,event|{if event.id.as_ref()=="quit"{app.exit(0)}else if let Some(w)=app.get_webview_window("main"){w.show().ok();w.set_focus().ok();}}).build(app)?;
   let path=socket_path();if path.exists(){std::fs::remove_file(&path)?}let listener=UnixListener::bind(&path)?;std::fs::set_permissions(&path,std::fs::Permissions::from_mode(0o600))?;let handle=app.handle().clone();
   let reminders=app.handle().clone();std::thread::spawn(move||loop{std::thread::sleep(std::time::Duration::from_secs(30));let _=notify_due(&reminders.state::<Store>());});
   std::thread::spawn(move||{for stream in listener.incoming().flatten(){stream.set_read_timeout(Some(std::time::Duration::from_secs(2))).ok();let mut reader=BufReader::new(stream);let mut line=String::new();use std::io::Read;let read=reader.by_ref().take(65536).read_line(&mut line);let response=if read.is_ok(){serde_json::from_str::<Value>(&line).map_err(|e|e.to_string()).and_then(|request|ipc(&handle.state::<Store>(),request))}else{Err("Invalid request".into())};let output=response.unwrap_or_else(|e|json!({"error":e}));writeln!(reader.get_mut(),"{}",output).ok();}});
   Ok(())
  }).on_window_event(|window,event|{if let tauri::WindowEvent::CloseRequested{api,..}=event{api.prevent_close();window.hide().ok();}})
- .run(tauri::generate_context!()).expect("Unable to start Tick and Done");
+ .run(tauri::generate_context!()).expect("Unable to start Task-tick");
 }
 
 #[cfg(test)]
@@ -494,7 +494,7 @@ mod tests {
     fn desktop_notification_service_roundtrip() {
         let notifications = DbusNotifications;
         let id = notifications
-            .show(0, "Tick and Done reminder check")
+            .show(0, "Task-tick reminder check")
             .unwrap();
         assert!(id > 0);
         notifications.close(id).unwrap();

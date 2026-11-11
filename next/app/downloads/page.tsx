@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { MarketingSite } from "../site-navigation";
 type Release = {
   tag_name: string;
   html_url: string;
@@ -18,8 +19,7 @@ export default async function Downloads() {
     if (r.ok) release = await r.json();
   } catch {}
   return (
-    <main className="document-page">
-      <Link href="/">← Tick and Done</Link>
+    <MarketingSite><main className="document-page">
       <h1>
         Your list.
         <br />A little closer.
@@ -65,6 +65,6 @@ export default async function Downloads() {
         installation from your browser or file manager. Hyprland integration is
         optional and backs up existing configuration before changing it.
       </p>
-    </main>
+    </main></MarketingSite>
   );
 }

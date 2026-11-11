@@ -25,12 +25,12 @@
             <category android:name="android.intent.category.LAUNCHER" />
         </intent-filter>
       <intent-filter><action android:name="android.intent.action.VIEW"/><category android:name="android.intent.category.DEFAULT"/><category android:name="android.intent.category.BROWSABLE"/><data android:scheme="tickanddone"/></intent-filter></activity>
-    <activity android:name=".QuickAddActivity" android:theme="@android:style/Theme.Material.Dialog.Alert" android:exported="false"/>
+    <activity android:name=".QuickAddActivity" android:taskAffinity="com.tickanddone.compose" android:excludeFromRecents="true" android:theme="@style/QuickComposeTheme" android:exported="false"/>
 <activity android:name=".WidgetConfigActivity" android:theme="@android:style/Theme.Material.Dialog.Alert" android:exported="true"><intent-filter><action android:name="android.appwidget.action.APPWIDGET_CONFIGURE"/></intent-filter></activity>
 <receiver android:name=".TodosWidget" android:label="@string/todos_widget" android:exported="true"><intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE"/></intent-filter><meta-data android:name="android.appwidget.provider" android:resource="@xml/todos_widget"/></receiver>
 <receiver android:name=".MoviesWidget" android:label="@string/movies_widget" android:exported="true"><intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE"/></intent-filter><meta-data android:name="android.appwidget.provider" android:resource="@xml/movies_widget"/></receiver>
 <receiver android:name=".WidgetActionReceiver" android:exported="false"/>
-<receiver android:name=".ReminderReceiver" android:exported="false"><intent-filter><action android:name="android.intent.action.BOOT_COMPLETED"/><action android:name="android.intent.action.TIME_SET"/><action android:name="android.intent.action.TIMEZONE_CHANGED"/></intent-filter></receiver>
+<receiver android:name=".ReminderReceiver" android:exported="false"><intent-filter><action android:name="android.intent.action.BOOT_COMPLETED"/><action android:name="android.intent.action.TIME_SET"/><action android:name="android.intent.action.TIMEZONE_CHANGED"/><action android:name="android.app.action.SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED"/></intent-filter></receiver>
 <service android:name=".WidgetRowsService" android:permission="android.permission.BIND_REMOTEVIEWS" android:exported="false"/>
 <service android:name=".TickSyncJob" android:permission="android.permission.BIND_JOB_SERVICE" android:exported="true"/>
 </application>

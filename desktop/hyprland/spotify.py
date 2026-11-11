@@ -84,7 +84,7 @@ def main():
   else:print(json.dumps(toggle() if args.action=='toggle' else request('state')))
  except (OSError,ValueError,RuntimeError,subprocess.SubprocessError) as e:
   message=str(e);print(json.dumps({'error':message}))
-  if args.action=='toggle':subprocess.run(['notify-send','Tick and Done · Spotify',message],check=False)
+  if args.action=='toggle':subprocess.run(['notify-send','Task-tick · Spotify',message],check=False)
   return 1
  return 0
 if __name__=='__main__':sys.exit(main())

@@ -37,7 +37,7 @@ def restore_artifact(path,description):
  elif description['kind']=='symlink':path.symlink_to(description['target'])
 
 def launcher_text(binpath):
- return f'[Desktop Entry]\nType=Application\nName=Tick and Done\nComment=Todos and your watchlist, within reach\nExec="{binpath}"\nIcon=utilities-terminal\nTerminal=false\nCategories=Office;Utility;\nStartupWMClass=com.tickanddone.desktop\n'
+ return f'[Desktop Entry]\nType=Application\nName=Task-tick\nComment=Todos and your watchlist, within reach\nExec="{binpath}"\nIcon={HOME/".local/share/icons/hicolor/512x512/apps/task-tick.png"}\nTerminal=false\nCategories=Office;Utility;\nStartupWMClass=com.tickanddone.desktop\n'
 
 def adopt_legacy(manifest,content,keys,execs,binpath,lib,sidebar,applications,binary):
  # Explicit adoption is limited to verified shipped artifacts and the known managed blocks.
@@ -57,7 +57,7 @@ def adopt_legacy(manifest,content,keys,execs,binpath,lib,sidebar,applications,bi
   description=describe(target)
   if description.get('sha256') not in hashes:raise RuntimeError(f'Unknown or modified legacy artifact: {target}')
  launcher=applications/'com.tickanddone.desktop.desktop'
- if launcher.read_text()!=launcher_text(binpath):raise RuntimeError('Legacy desktop launcher is modified or not recognized')
+ if launcher.read_text() not in {launcher_text(binpath),launcher_text(binpath).replace('Name=Task-tick\n','Name=Tick and Done\n').replace(f'Icon={HOME/".local/share/icons/hicolor/512x512/apps/task-tick.png"}\n','Icon=utilities-terminal\n')}:raise RuntimeError('Legacy desktop launcher is modified or not recognized')
  if not binpath.is_symlink() or binpath.resolve()!=binary:raise RuntimeError('Legacy binary link must match the explicitly selected binary')
  artifacts={str(target):{'before':{'kind':'absent'},'installed':describe(target)} for target in [binpath,lib/'spotify.py',sidebar/'TickDashboard.qml',launcher]}
  previous_binary=Path(next(iter(manifest['backups'].values()))).parent/'previous-tick-and-done'
@@ -65,7 +65,7 @@ def adopt_legacy(manifest,content,keys,execs,binpath,lib,sidebar,applications,bi
  return {**manifest,'version':3,'changes':changes,'artifacts':artifacts}
 
 def main():
- p=argparse.ArgumentParser();p.add_argument('--binary',type=Path,required=True);p.add_argument('--uninstall',action='store_true');p.add_argument('--adopt-legacy',action='store_true',help='Confirm verified legacy Tick and Done artifacts belong to this integration');args=p.parse_args()
+ p=argparse.ArgumentParser();p.add_argument('--binary',type=Path,required=True);p.add_argument('--uninstall',action='store_true');p.add_argument('--adopt-legacy',action='store_true',help='Confirm verified legacy artifacts belong to this integration');args=p.parse_args()
  config=Path(os.environ.get('XDG_CONFIG_HOME',str(HOME/'.config')));state=Path(os.environ.get('XDG_STATE_HOME',str(HOME/'.local/state')))/'tick-and-done/integration';lib=HOME/'.local/lib/tick-and-done';binpath=HOME/'.local/bin/tick-and-done';sidebar=config/'quickshell/ii/modules/ii/sidebarLeft';content=sidebar/'SidebarLeftContent.qml';keys=config/'hypr/custom/keybinds.lua';execs=config/'hypr/custom/execs.lua'
  if args.uninstall:
   manifest=json.loads((state/'manifest.json').read_text())
@@ -98,19 +98,20 @@ def main():
  if previous and 'changes' not in previous:
   raise RuntimeError('Legacy integration exists. Review its original backups before upgrading; current configuration was not changed.')
  applications=HOME/'.local/share/applications'
- artifact_paths=[binpath,lib/'spotify.py',sidebar/'TickDashboard.qml',applications/'com.tickanddone.desktop.desktop']
+ iconpath=HOME/'.local/share/icons/hicolor/512x512/apps/task-tick.png'
+ artifact_paths=[binpath,lib/'spotify.py',sidebar/'TickDashboard.qml',applications/'com.tickanddone.desktop.desktop',iconpath]
  artifact_baselines={}
  for index,target in enumerate(artifact_paths):
   prior=previous.get('artifacts',{}).get(str(target))
   if prior:
    if describe(target)!=prior['installed']:raise RuntimeError(f'Modified generated integration artifact: {target}')
    artifact_baselines[str(target)]=prior['before']
-  elif previous:raise RuntimeError('Legacy artifact ownership is unknown; review backups before updating.')
+  elif previous and target!=iconpath:raise RuntimeError('Legacy artifact ownership is unknown; review backups before updating.')
   else:artifact_baselines[str(target)]=capture(target,backupdir/f'artifact-{index}')
- lib.mkdir(parents=True,exist_ok=True);binpath.parent.mkdir(parents=True,exist_ok=True)
+ lib.mkdir(parents=True,exist_ok=True);binpath.parent.mkdir(parents=True,exist_ok=True);iconpath.parent.mkdir(parents=True,exist_ok=True)
  if binpath.exists() and (not binpath.is_symlink() or binpath.resolve()!=binary):shutil.copy2(binpath,backupdir/'previous-tick-and-done')
  if binpath.exists() or binpath.is_symlink():binpath.unlink()
- binpath.symlink_to(binary);shutil.copy2(BASE/'spotify.py',lib/'spotify.py');shutil.copy2(BASE/'TickDashboard.qml',sidebar/'TickDashboard.qml')
+ binpath.symlink_to(binary);shutil.copy2(BASE/'spotify.py',lib/'spotify.py');shutil.copy2(BASE/'TickDashboard.qml',sidebar/'TickDashboard.qml');shutil.copy2(BASE.parent/'src-tauri/icons/icon.png',iconpath)
  content.write_text(original.replace('SidebarDashboard {}','TickDashboard {}'))
  helper=str(lib/'spotify.py')
  keys.write_text(block(keys.read_text(),f'hl.unbind("SUPER + Space")\nhl.bind("SUPER + Space", hl.dsp.exec_cmd(\'python3 "{helper}" toggle\'), {{description="Spotify: play/pause with quiet startup"}})'))

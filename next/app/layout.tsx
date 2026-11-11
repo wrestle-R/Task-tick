@@ -3,8 +3,8 @@ import "@tick/ui/styles.css";
 import "./site.css";
 export const metadata: Metadata = {
   title: {
-    default: "Tick and Done — A little less on your mind",
-    template: "%s · Tick and Done",
+    default: "Task-tick — A little less on your mind",
+    template: "%s · Task-tick",
   },
   description:
     "Todos, a watchlist, and widgets that keep your day within reach. Android, Linux, and web. Offline first.",

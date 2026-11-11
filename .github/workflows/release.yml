@@ -1,4 +1,4 @@
-name: Prepare release
+name: Prepare Task-tick release
 on:
   push:
     tags: ['v*']
@@ -62,10 +62,11 @@ jobs:
           TICK_ANDROID_STORE_PASSWORD: ${{ secrets.TICK_ANDROID_STORE_PASSWORD }}
           TICK_ANDROID_KEY_ALIAS: ${{ secrets.TICK_ANDROID_KEY_ALIAS }}
           TICK_ANDROID_KEY_PASSWORD: ${{ secrets.TICK_ANDROID_KEY_PASSWORD }}
+      - run: cp app/android/app/build/outputs/apk/release/app-release.apk "$RUNNER_TEMP/Task-tick-android.apk"
       - uses: actions/upload-artifact@v4
         with:
           name: android
-          path: app/android/app/build/outputs/apk/release/*.apk
+          path: ${{ runner.temp }}/Task-tick-android.apk
           if-no-files-found: error
   draft:
     needs: [linux, android]
@@ -85,4 +86,4 @@ jobs:
         run: |
           cd artifacts
           sha256sum *.apk *.deb *.AppImage > SHA256SUMS
-          gh release create "$RELEASE_TAG" --repo "$RELEASE_REPO" --draft --title "$RELEASE_TAG" --notes 'Build checks passed. Device, package installation and update acceptance must be recorded before publishing.' ./*
+          gh release create "$RELEASE_TAG" --repo "$RELEASE_REPO" --draft --title "Task-tick $RELEASE_TAG" --notes 'Build checks passed. Device, package installation and update acceptance must be recorded before publishing.' ./*

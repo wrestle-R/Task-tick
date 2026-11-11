@@ -40,7 +40,7 @@ To restore backed-up files:
 python3 desktop/hyprland/install.py --binary /absolute/path/to/tick-and-done --uninstall
 ```
 
-The Spotify helper expects the user's installed Spotify TUI with its own login/provider setup. Tick and Done does not collect Spotify credentials. It can reconnect the helper quietly; a first playable track still has to be selected once.
+The Spotify helper expects the user's installed Spotify TUI with its own login/provider setup. Task-tick does not collect Spotify credentials. It can reconnect the helper quietly; a first playable track still has to be selected once.
 
 ## Release signing
 

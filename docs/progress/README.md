@@ -1,5 +1,13 @@
 # Implementation progress
 
+### Current interface and update evidence, 2026-11-11
+
+Task-tick branding, the approved folded-mark website hero, compact widget creation/editing and persistent Android System/Light/Dark controls are implemented. Marketing acceptance passes at 1366, 1024, 390 and 320 pixels, including first-viewport heading/action, decoded artwork, no horizontal overflow, theme persistence, menu keyboard focus and documentation/download navigation. Source artwork and its prompt are recorded in `docs/design/hero-direction.md`.
+
+On the isolated Android16 emulator, the production-signed versionCode3 APK updated the existing signed installation with its configured widget and offline task intact. Light persisted after reopening; Dark and the compact editor also worked. Signing out with a pending mutation cleared widget account content. Account A then showed its own tasks without B's pending task. Returning to B restored and synchronized exactly one copy with its original notes; a server query confirmed no copy in A. Native resume now registers sync jobs and reschedules reminders even while offline. These observations cover this update/account-transition slice, not the entire lifecycle matrix.
+
+Twelve core tests, shared theme generation checks, workspace/app typechecks, production web/desktop builds, four Rust tests, eight installer tests, three Spotify-helper tests and Android debug/release builds pass. Branded deb/AppImage packages build locally. The user chose continued emulator testing; physical-phone acceptance, installed desktop/Spotify cold recovery, reminder/reboot matrices and verified published releases remain open.
+
 - [x] Approved product scope and client architecture
 - [x] Shared offline mutation protocol and focused behaviour tests
 - [x] Supabase schema applied after rollback/isolation checks
@@ -36,7 +44,7 @@ Implementation resumed against the six-phase completion plan. New source fixes g
 
 These changes do not close account/mailbox, widget, reminder-delivery, desktop or release acceptance gates. No new native release is published.
 
-Real email verification acceptance (2026-11-11): the designated account received its verification email, the user reported the link opened Tick and Done, and a read-only database check confirmed verified state. Password-reset delivery/form acceptance is still pending; the reset request was accepted without changing the account password.
+Real email verification acceptance (2026-11-11): the designated account received its verification email, the user reported the link opened Task-tick, and a read-only database check confirmed verified state. Password-reset delivery/form acceptance is still pending; the reset request was accepted without changing the account password.
 
 Completion batch (2026-11-11): confirmed server-state storage and stale-acknowledgement regressions pass for web/desktop; generated integration artifacts now have conflict-aware install/reinstall/uninstall coverage; the helper restores engine-owned playback queues/options using an additive Spotify-Tui engine contract (owning source commit e2c0449, 13 Rust tests passing). Six core, five installer and three helper tests pass; desktop Rust tests pass. These are implementation results, not evidence of physical widget delivery, real reboot recovery, external-provider queue access or a verified public release. Legacy integration adoption and bounded pull/history pagination are implemented in the subsequent batches.
 

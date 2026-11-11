@@ -1,124 +1,20 @@
 import Link from "next/link";
-import {
-  Check,
-  ArrowUpRight,
-  Plus,
-  MoreVertical,
-  ChevronDown,
-  ArrowRight,
-  WifiOff,
-} from "lucide-react";
+import Image from "next/image";
+import { ArrowUpRight, ArrowRight } from "lucide-react";
+import { MarketingSite } from "./site-navigation";
 export default function Home() {
   return (
-    <div className="site">
-      <nav className="site-nav">
-        <Link className="tick-brand" href="/">
-          <span className="tick-mark">
-            <Check size={22} />
-          </span>
-          tick & done<sup>®</sup>
-        </Link>
-        <div>
-          <Link href="/docs">The details</Link>
-          <Link href="/downloads">Downloads</Link>
-          <Link href="/app" className="site-nav-cta">
-            Open your space <ArrowUpRight size={14} />
-          </Link>
-        </div>
-      </nav>
+    <MarketingSite>
       <main>
-        <section className="site-hero">
-          <div className="hero-copy">
-            <span className="section-kicker">
-              <span className="status-dot" /> A LITTLE LESS ON YOUR MIND
-            </span>
-            <h1>
-              Life’s a lot.
-              <br />
-              Your list
-              <br />
-              <em>shouldn’t be.</em>
-            </h1>
-            <p>
-              Things to do. Films to watch. A little space
-              <br className="desktop-break" /> for all the things you’re keeping
-              in your head.
-            </p>
-            <Link className="hero-cta" href="/app">
-              Make a little room <ArrowUpRight size={19} />
-            </Link>
-            <span className="hero-footnote">
-              Android · Linux · Web. And wherever your day goes.
-            </span>
+        <section className="site-hero" aria-labelledby="hero-heading">
+          <div className="hero-art" aria-hidden="true">
+            <Image src="/hero-fold.png" alt="" width={1254} height={1254} preload sizes="(max-width: 760px) 100vw, 62vw" />
           </div>
-          <div className="hero-composition">
-            <div className="composition-caption">
-              YOUR DAY, WITH A LITTLE MORE SPACE.
-            </div>
-            <div className="widget-demo todo-demo">
-              <header>
-                <span>
-                  Today <ChevronDown size={15} />
-                </span>
-                <div>
-                  <Plus />
-                  <MoreVertical />
-                </div>
-              </header>
-              <ul>
-                <li>
-                  <span className="demo-check checked">
-                    <Check size={11} />
-                  </span>
-                  <s>Make something I actually want to use</s>
-                </li>
-                <li>
-                  <span className="demo-check" />
-                  Get out for a little walk
-                </li>
-                <li>
-                  <span className="demo-check" />
-                  Call home
-                </li>
-                <li>
-                  <span className="demo-check" />
-                  Do the thing I’ve been putting off
-                </li>
-              </ul>
-              <footer>
-                ONE THING AT A TIME <span>03 LEFT</span>
-              </footer>
-            </div>
-            <div className="little-label">
-              <span>✓</span> Made for the home screen.
-            </div>
-            <div className="widget-demo movie-demo">
-              <header>
-                <span>
-                  For later <ChevronDown size={15} />
-                </span>
-                <Plus />
-              </header>
-              <div className="movie-demo-row">
-                <span className="film-block">
-                  AFTER
-                  <br />
-                  SUN<span>2022 · FILM</span>
-                </span>
-                <div>
-                  <h3>Aftersun</h3>
-                  <p>
-                    A quiet night in.
-                    <br />
-                    Something worth watching.
-                  </p>
-                  <span className="demo-watch">ON THE WATCHLIST</span>
-                </div>
-              </div>
-            </div>
-            <div className="offline-label">
-              <WifiOff size={14} /> Still here when Wi-Fi isn’t.
-            </div>
+          <div className="hero-copy">
+            <h1 id="hero-heading">A little less<br />on your mind.</h1>
+            <p>Things to do. Films to watch.</p>
+            <Link className="hero-cta" href="/app">Make a little room <ArrowUpRight size={21} /></Link>
+            <span className="hero-footnote">Android · Linux · Web</span>
           </div>
         </section>
         <section className="site-strip">
@@ -202,7 +98,7 @@ export default function Home() {
       </main>
       <footer className="site-footer">
         <Link className="tick-brand" href="/">
-          tick & done.
+          Task-tick
         </Link>
         <span>A little less on your mind.</span>
         <div>
@@ -211,6 +107,6 @@ export default function Home() {
           <a href="https://github.com/wrestle-R/Task-tick">GitHub ↗</a>
         </div>
       </footer>
-    </div>
+    </MarketingSite>
   );
 }

@@ -1,4 +1,4 @@
-name: Checks
+name: Task-tick checks
 on:
   workflow_call:
   push:
@@ -22,6 +22,17 @@ jobs:
       - run: python3 docs/tests/integration-install.py
       - run: npm run typecheck
       - run: npm run build
+      - run: npx playwright install --with-deps chromium
+      - name: Marketing layout and appearance acceptance
+        run: |
+          npm run start -w next -- --port 3004 > /tmp/task-tick-web.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+          for attempt in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:3004/ > /dev/null; then break; fi
+            sleep 1
+          done
+          TICK_TEST_BASE_URL=http://127.0.0.1:3004 node docs/tests/marketing.mjs
   android:
     runs-on: ubuntu-24.04
     steps:

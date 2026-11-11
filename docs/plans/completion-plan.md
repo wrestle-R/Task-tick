@@ -1,4 +1,4 @@
-# Tick and Done: implementation completion plan
+# Task-tick: implementation completion plan
 
 Status: implementation resumed by explicit user instruction on 2026-11-11. All six phases remain subject to their acceptance gates.
 Prepared: 2026-11-10. Audited source baseline: `267d176`.
@@ -384,3 +384,16 @@ Environment facts are agent discovery tasks. User input is reserved for actual p
 Implementation can resume when the user explicitly asks to start after reviewing this plan. The next action is Phase 1 inventory and test-baseline setup, followed by its first complete account journey. It is not another broad request to build everything at once.
 
 At each phase exit, update the requirement/evidence matrix, name unresolved failures precisely, and proceed to the next unblocked slice. Only Phase 6's exit permits the statement “the full implementation plan is complete.”
+
+## 16. Accepted interface additions, 2026-11-11
+
+These user-supplied directions extend Phase3 and must be included in Phase6's final audit:
+
+- **UI01, compact widget editor:** widget plus and item text open a floating editor over the launcher, matching the supplied compact-card reference. Todos expose editable title/notes, due date/time and priority, with save, discard confirmation and expand-to-full-editor actions. Movies retain their scoped title/rating fields. Preserve the two list types, account boundaries, durable offline writes, existing edits and shared light/dark palette. Test creation and editing, unchanged-field merge during concurrent edits, safe-area/keyboard layout, rotation/draft preservation, and expanded-editor navigation.
+- **UI02, approved eighth hero direction:** use the supplied hinged cream/lime mark, dark background, headline “A little less on your mind.”, supporting line “Things to do. Films to watch.”, “Make a little room” action and “Android · Linux · Web” platform line. Implement real accessible HTML controls, persistent theme switching and navigation. Match the composition on mobile and adapt it to desktop while keeping heading/action visible on a small laptop. Website deployment remains GitHub-linked; source/art direction and browser evidence do not substitute for production deployment verification.
+- **UI03, Task-tick rebrand:** use Task-tick on website, app, widgets, desktop, notifications, documentation and release labels. Preserve installed package identifiers, native stores, signing identity and legacy integration recognition so an update retains existing data. Verify a signed update with a queued offline mutation and an existing configured widget.
+- **UI04, shared appearance:** persistent light/dark controls on the website, web workspace, Android and desktop. Android also offers System and applies its choice to the compact editor and native dialogs. Verify both themes, restart persistence, readable controls and independent widget-instance appearance.
+
+Acceptance availability: the user selected continued isolated-emulator testing. Physical-phone acceptance remains deferred and must be recorded separately from emulator observations.
+
+Neither addition removes an existing acceptance gate or authorizes declaring the full plan complete from a visual/build check alone.

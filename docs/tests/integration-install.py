@@ -37,7 +37,23 @@ class Lifecycle(unittest.TestCase):
    self.assertEqual(helper.read_text(),'previous personal helper')
    self.assertFalse((root/'.local/bin/tick-and-done').is_symlink())
    self.assertFalse((content.parent/'TickDashboard.qml').exists())
+   self.assertFalse((root/'.local/share/icons/hicolor/512x512/apps/task-tick.png').exists())
    self.assertFalse((root/'.local/share/applications/com.tickanddone.desktop.desktop').exists())
+ def test_brand_upgrade_adds_icon_and_restores_previous_launcher(self):
+  with tempfile.TemporaryDirectory() as folder:
+   root=Path(folder);config,content,binary=self.setup_tree(root)
+   self.run_installer(root,config,binary)
+   icon=root/'.local/share/icons/hicolor/512x512/apps/task-tick.png';icon.unlink()
+   launcher=root/'.local/share/applications/com.tickanddone.desktop.desktop'
+   legacy=launcher.read_text().replace('Name=Task-tick','Name=Tick and Done').replace(f'Icon={icon}','Icon=utilities-terminal')
+   launcher.write_text(legacy)
+   manifest=root/'.state/tick-and-done/integration/manifest.json';data=json.loads(manifest.read_text())
+   data['artifacts'].pop(str(icon));data['artifacts'][str(launcher)]['installed']=installer.describe(launcher)
+   manifest.write_text(json.dumps(data))
+   self.run_installer(root,config,binary)
+   self.assertIn('Name=Task-tick',launcher.read_text());self.assertTrue(icon.is_file())
+   self.run_installer(root,config,binary,uninstall=True)
+   self.assertFalse(icon.exists())
  def test_modified_artifact_aborts_before_configuration_changes(self):
   with tempfile.TemporaryDirectory() as folder:
    root=Path(folder);config,content,binary=self.setup_tree(root)

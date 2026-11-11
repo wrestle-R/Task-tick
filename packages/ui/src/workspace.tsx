@@ -326,7 +326,7 @@ export function Workspace({
         new Notification(
           fresh.length === 1 ? fresh[0].title : `${fresh.length} tasks are due`,
           {
-            body: "Open Tick and Done to see your unfinished tasks.",
+            body: "Open Task-tick to see your unfinished tasks.",
             tag: "tick-overdue",
           },
         );
@@ -507,7 +507,7 @@ export function Workspace({
           <span className="tick-mark">
             <Check size={22} />
           </span>
-          tick & done<span className="tick-brand-dot">®</span>
+          Task-tick
         </a>
         <span className="tick-eyebrow">A LITTLE LESS ON YOUR MIND</span>
         <nav aria-label="Lists">
@@ -618,7 +618,7 @@ export function Workspace({
               </div>
             </div>
             <form className="auth-form" onSubmit={auth}>
-              <span className="section-kicker">TICK AND DONE</span>
+              <span className="section-kicker">TASK-TICK</span>
               <h2>
                 {authMode === "signup"
                   ? "Make yourself at home."
