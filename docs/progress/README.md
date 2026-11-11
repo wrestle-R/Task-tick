@@ -8,6 +8,10 @@ On the isolated Android16 emulator, the production-signed versionCode3 APK updat
 
 Twelve core tests, shared theme generation checks, workspace/app typechecks, production web/desktop builds, four Rust tests, eight installer tests, three Spotify-helper tests and Android debug/release builds pass. Branded deb/AppImage packages build locally. The user chose continued emulator testing; physical-phone acceptance, installed desktop/Spotify cold recovery, reminder/reboot matrices and verified published releases remain open.
 
+Delivery evidence for `f9360e9`: GitHub run43065393190 passed web, Rust and Android jobs. The linked Vercel deployment succeeded; the production marketing suite passed the same four-width hero/navigation/theme checks.
+
+Reminder observations on the isolated Android16 emulator: a future reminder displayed its correct Task-tick title in the OS notification shade at22:40 while airplane mode was on, Wi-Fi/mobile data were off and the app was in the background. A second deadline at22:52 passed during a subsequent cold boot. A changed guest boot ID confirmed a real Android restart; without opening the main app, the launcher and notification shade showed retained widget content and the newly delivered overdue reminder offline. This establishes scheduled offline delivery and overdue recovery after cold boot. It does not establish a future deadline reached after boot, the full permission/cancellation matrix or physical-device behaviour. An earlier AVD shutdown/reopen used Quick Boot and is deliberately excluded from cold-boot evidence.
+
 - [x] Approved product scope and client architecture
 - [x] Shared offline mutation protocol and focused behaviour tests
 - [x] Supabase schema applied after rollback/isolation checks

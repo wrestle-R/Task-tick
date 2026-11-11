@@ -15,7 +15,7 @@ This plan applies Matt Pocock's specification synthesis and vertical-slice plann
 - Approved product decisions from this conversation and the original private project plan.
 - Repository architecture, progress records, migration, native repository, desktop store/integration installer and release workflow.
 
-The deliverable stays under the existing documentation directory to preserve the clean repository root. It is a local review draft, not a published GitHub issue or an agent-ready work queue. No implementation, builds, installs, service restarts, schema changes or deployments are authorized by this planning turn. Existing implementation authorization is superseded by the latest planning-only instruction until the user explicitly resumes it.
+The plan stays under the existing documentation directory to preserve the clean repository root. It was originally prepared as a review draft under a planning-only instruction. The user subsequently authorized implementation of all six phases; current acceptance evidence is recorded in `docs/progress/README.md`. The original planning restriction is historical.
 
 ## 1. Problem and completion target
 
