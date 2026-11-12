@@ -44,6 +44,7 @@ import {
   type Fields,
   type Mutation,
 } from "@tick/core";
+import { SkeuoButton, SkeuoThemeButton, SkeuoSwitch } from "./skeuo";
 import { browserStorage, type Storage } from "./storage";
 type Config = { url: string; key: string; api: string };
 type Props = {
@@ -471,6 +472,23 @@ export function Workspace({
       setFinding(false);
     }
   }
+  useEffect(() => {
+    setTmdb([]);
+    if(kind !== "movie" || view !== "active" || title.trim().length < 2 || !session || !config || !online) return;
+    const controller = new AbortController();
+    const account = session.user.id;
+    const timer = setTimeout(async () => {
+      setFinding(true);
+      try {
+        const r = await fetch(`${config.api}/api/movies?q=${encodeURIComponent(title.trim())}`, {signal: controller.signal, headers: {Authorization: `Bearer ${session.access_token}`}});
+        const d = await r.json();
+        if(!r.ok) throw new Error(d.error);
+        if(!controller.signal.aborted && accountRef.current === account) setTmdb(d.results);
+      } catch(e) {if(!controller.signal.aborted) setError((e as Error).message);}
+      finally {if(!controller.signal.aborted) setFinding(false);}
+    }, 350);
+    return () => {clearTimeout(timer);controller.abort();};
+  }, [title, kind, view, session, config, online]);
   async function addMovie(movie: Tmdb) {
     const existing = duplicate(state.items, movie.media_type, movie.id);
     if (existing) {
@@ -490,92 +508,34 @@ export function Workspace({
     );
     setTmdb([]);
     setQuery("");
+    setTitle("");
     void sync();
   }
-  const items =
-    view === "history"
-      ? []
-      : visible(state, kind, view).filter((i) =>
-          i.title.toLocaleLowerCase().includes(query.toLocaleLowerCase()),
-        );
+  const items = (view === "history" ? [] : view === "trash"
+    ? [...visible(state, "todo", "trash"), ...visible(state, "movie", "trash")]
+    : [...visible(state, kind), ...visible(state, kind, "done")])
+    .filter(i => i.title.toLocaleLowerCase().includes(query.toLocaleLowerCase()));
+  const [completedOpen, setCompletedOpen] = useState(true);
+  const shownItems = items.filter(i => view === "trash" || !i.done || completedOpen);
   const active = visible(state, kind).filter((i) => !i.parentId),
     done = visible(state, kind, "done");
   return (
     <div className="tick-shell">
-      <aside className="tick-sidebar">
-        <a className="tick-brand" href={desktop ? "#" : "/"}>
-          <span className="tick-mark">
-            <Check size={22} />
-          </span>
-          Task-tick
-        </a>
-        <span className="tick-eyebrow">A LITTLE LESS ON YOUR MIND</span>
-        <nav aria-label="Lists">
-          {(["todo", "movie"] as Kind[]).map((k) => (
-            <button
-              className={kind === k ? "nav-active" : ""}
-              key={k}
-              onClick={() => {
-                setKind(k);
-                setView("active");
-                setSelected(null);
-                setQuery("");
-                setTmdb([]);
-              }}
-            >
-              {k === "todo" ? (
-                <ListTodo size={19} />
-              ) : (
-                <Clapperboard size={19} />
-              )}
-              <span>{k === "todo" ? "My todos" : "Watchlist"}</span>
-              <small>
-                {visible(state, k).filter((i) => !i.parentId).length}
-              </small>
-            </button>
-          ))}
-          <div className="nav-divider" />
-          <button
-            className={view === "done" ? "nav-active" : ""}
-            onClick={() => setView("done")}
-          >
-            <Check size={18} />
-            Completed
-          </button>
-          <button
-            className={view === "trash" ? "nav-active" : ""}
-            onClick={() => setView("trash")}
-          >
-            <Trash2 size={18} />
-            Trash <small>7d</small>
-          </button>
-          <button
-            className={view === "history" ? "nav-active" : ""}
-            onClick={() => setView("history")}
-          >
-            <History size={18} />
-            Recovery <small>7d</small>
-          </button>
-        </nav>
-        <div className="sidebar-bottom">
-          <div className="local-note">
-            <span className="status-dot" />A little space to get things done.
-            <p>Your lists stay with you. Even offline.</p>
-          </div>
-          <button onClick={() => setSettings(true)}>
-            <Settings size={17} /> Settings
-          </button>
-          <button onClick={() => setDark(!dark)}>
-            {dark ? <Sun size={17} /> : <Moon size={17} />}{" "}
-            {dark ? "Light mode" : "Dark mode"}
-          </button>
-          {session && (
-            <button onClick={signout}>
-              <LogOut size={17} /> Sign out
-            </button>
-          )}
+      <header className="tick-topbar">
+        <a className="tick-brand" href={desktop ? "#" : "/"}><span className="tick-mark"><Check size={20}/></span>Task-tick</a>
+        {session && <nav className="top-navigation" aria-label="Lists">
+          {(["todo", "movie", "trash"] as const).map(tab => <button key={tab}
+            aria-current={(tab === "trash" ? view === "trash" : kind === tab && view !== "trash") ? "page" : undefined}
+            onClick={() => {if(tab !== "trash") setKind(tab);setView(tab === "trash" ? "trash" : "active");setSelected(null);setQuery("");setTitle("");setTmdb([]);}}>
+            {tab === "todo" ? <ListTodo size={17}/> : tab === "movie" ? <Clapperboard size={17}/> : <Trash2 size={17}/>}
+            {tab === "todo" ? "Todos" : tab === "movie" ? "Watchlist" : "Trash"}
+          </button>)}
+        </nav>}
+        <div className="top-actions">
+          <SkeuoThemeButton theme={dark ? "dark" : "light"} onThemeChange={t => setDark(t === "dark")} aria-label="Toggle theme"/>
+          <SkeuoButton square size="sm" aria-label="Settings" onClick={() => setSettings(true)}><Settings size={18}/></SkeuoButton>
         </div>
-      </aside>
+      </header>
       <main className="tick-main">
         <header className="workspace-header">
           <span>{desktop ? "YOUR DESKTOP" : "YOUR EVERYDAY SPACE"}</span>
@@ -656,10 +616,7 @@ export function Workspace({
                   />
                 </label>
               )}
-              <button
-                className="primary-button"
-                disabled={authBusy || !authReady}
-              >
+              <SkeuoButton variant="primary" type="submit" loading={authBusy} disabled={!authReady}>
                 {authBusy
                   ? "One moment…"
                   : authMode === "signup"
@@ -670,7 +627,7 @@ export function Workspace({
                         ? "Update password"
                         : "Sign in"}
                 <ArrowUpRight size={17} />
-              </button>
+              </SkeuoButton>
               {message && <p role="status">{message}</p>}
               <div className="auth-links">
                 <button
@@ -709,12 +666,12 @@ export function Workspace({
                       ? "Done & dusted."
                       : "That’s a wrap."
                     : view === "trash"
-                      ? "The recycling pile."
+                      ? "Trash"
                       : view === "history"
                         ? "A little rewind."
                         : kind === "todo"
-                          ? "Less thinking."
-                          : "Worth watching."}
+                          ? "Todos"
+                          : "Watchlist"}
                   <span className="heading-dot">●</span>
                 </h1>
                 <p>
@@ -734,38 +691,8 @@ export function Workspace({
               </div>
             </section>
             <div className="list-toolbar">
-              <div className="view-tabs">
-                <button
-                  className={view === "active" ? "selected" : ""}
-                  onClick={() => setView("active")}
-                >
-                  {kind === "todo" ? "To do" : "To watch"}{" "}
-                  <span>{active.length}</span>
-                </button>
-                <button
-                  className={view === "done" ? "selected" : ""}
-                  onClick={() => setView("done")}
-                >
-                  {kind === "todo" ? "Completed" : "Watched"}{" "}
-                  <span>{done.length}</span>
-                </button>
-              </div>
-              <div className="search-input">
-                <Search size={16} />
-                <input
-                  aria-label="Search your list"
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  placeholder={
-                    kind === "movie" ? "Find a title…" : "Find something…"
-                  }
-                />
-                {kind === "movie" && view === "active" && (
-                  <button onClick={findMovies} disabled={finding || !online}>
-                    {finding ? "Searching…" : "Search TMDB"}
-                  </button>
-                )}
-              </div>
+              <div className="search-input"><Search size={16}/><input aria-label="Search your list" value={query} onChange={e => setQuery(e.target.value)} placeholder="Search your list…"/></div>
+              <button className="quiet-action" onClick={() => setView(view === "history" ? "active" : "history")}><History size={15}/> {view === "history" ? "Back to list" : "Edit history"}</button>
             </div>
             {view === "active" && (
               <form className="capture" onSubmit={add}>
@@ -782,7 +709,7 @@ export function Workspace({
                       : "Add a movie or TV show…"
                   }
                 />
-                <kbd>↵</kbd>
+                {finding && <small role="status">Finding titles…</small>}
                 <button
                   type="submit"
                   aria-label="Add item"
@@ -812,6 +739,7 @@ export function Workspace({
                       key={`${m.media_type}:${m.id}`}
                       onClick={() => void addMovie(m)}
                     >
+                      {m.poster_path && <img className="movie-poster" src={`https://image.tmdb.org/t/p/w92${m.poster_path}`} alt="" loading="lazy"/>}
                       <span>
                         {m.title ?? m.name}
                         <small>
@@ -873,11 +801,13 @@ export function Workspace({
                     </div>
                   ))
               ) : (
-                items.map((item) => (
+                shownItems.map((item, index) => (
+                  <React.Fragment key={item.id}>
+                  {view !== "trash" && item.done && (index === 0 || !shownItems[index - 1].done) && <button className="completed-heading" aria-expanded={completedOpen} onClick={() => setCompletedOpen(!completedOpen)}>Completed <span>{done.length} ⌄</span></button>}
                   <div
                     className={`task-row ${item.done ? "is-done" : ""} ${item.parentId ? "is-child" : ""}`}
                     key={item.id}
-                    draggable={view === "active"}
+                    draggable={view === "active" && !item.done}
                     onDragStart={(e) =>
                       e.dataTransfer.setData("text/plain", item.id)
                     }
@@ -903,6 +833,7 @@ export function Workspace({
                         {item.done && <Check size={15} />}
                       </button>
                     )}
+                    {item.kind === "movie" && item.poster && <img className="movie-poster" src={`https://image.tmdb.org/t/p/w92${item.poster}`} alt="" loading="lazy"/>}
                     <button
                       className="task-title"
                       onClick={() => setSelected(item)}
@@ -963,9 +894,10 @@ export function Workspace({
                         <GripVertical className="drag-handle" size={15} />
                       </>
                     )}
-                  </div>
+                  </div></React.Fragment>
                 ))
               )}
+              {view === "active" && !completedOpen && done.length > 0 && <button className="completed-heading" aria-expanded={false} onClick={() => setCompletedOpen(true)}>Completed <span>{done.length} ›</span></button>}
               {ready && view !== "history" && items.length === 0 && (
                 <div className="empty-state">
                   <span>{kind === "todo" ? "✓" : "✶"}</span>
@@ -1175,14 +1107,14 @@ export function Workspace({
               <X />
             </button>
             <span className="section-kicker">MAKE IT YOURS</span>
-            <h2>Your little space.</h2>
+            <h2>Settings</h2>
+            {session && <p className="muted">{session.user.email}</p>}
+            <SkeuoThemeButton theme={dark ? "dark" : "light"} onThemeChange={t => setDark(t === "dark")}/>
+            {session && <SkeuoButton onClick={() => void signout()}><LogOut size={16}/> Sign out</SkeuoButton>}
             <label>
               <span>Reminders on this {desktop ? "desktop" : "browser"}</span>
-              <input
-                type="checkbox"
-                checked={reminders}
-                onChange={async (e) => {
-                  const enabled = e.target.checked;
+              <SkeuoSwitch aria-label="Reminders" checked={reminders}
+                onCheckedChange={async (enabled) => {
                   if (nativeReminderSettings) {
                     try {
                       await nativeReminderSettings.set(enabled);

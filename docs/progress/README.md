@@ -1,3 +1,9 @@
+# Interface milestones, 2026-11-12
+
+Web and desktop now use a top bar with Todos, Watchlist and a combined Trash. Completed rows stay below unfinished rows and collapse as a group. Movie entry provides debounced TMDB suggestions with cancellation/account guards and optional posters. The website uses copied Skeuomorphism UI button/theme/switch/surface components with local native CSS.
+
+Verified: production Next/Vite builds, workspace typechecks, real browser sign-in/offline reload/reconnect/Undo, combined cross-list Trash and completed grouping. Marketing checks at 1366/1024/390/320 pass theme persistence, menu Escape/focus, first-view action and overflow/runtime checks.
+
 # Implementation progress
 
 ### Current interface and update evidence, 2026-11-11
