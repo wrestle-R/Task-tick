@@ -59,3 +59,14 @@ For a reviewed legacy installation, run the installer once with `--adopt-legacy`
 The sidebar IPC state response includes `_account`; writes must echo that value as `expectedAccount`. Upgrade the desktop binary and bundled QML together. Stale or older unbound writes are rejected with a refresh message. Desktop reminders use the standard session D-Bus notification service; no `notify-send` executable is required.
 
 The hosted recovery integration in `docs/tests/password-recovery.mjs` requires an authorized project admin key supplied through a private file path (`TICK_TEST_SUPABASE_ADMIN_KEY_FILE`) or process environment. It creates and removes its own fixture; it never changes an existing user's password and does not substitute for actual mailbox delivery evidence.
+
+
+## Event-driven sync and Firebase
+
+Apply `supabase/migrations/20261112210000_tick_events.sql` after the earlier sync migrations. The two existing lists are added to Supabase Realtime; normal owner RLS still controls access. The device registry has separate owner policies.
+
+Register the existing Android package `com.tickanddone` in Firebase and supply its matching `google-services.json` privately at `app/android/app/google-services.json`. It stays ignored; configured CI builds inject it from `TICK_FIREBASE_ANDROID_CONFIG`. The Gradle build selects the matching package when the configuration contains multiple registered clients. Firebase Messaging is included without Analytics.
+
+The Next backend needs server-only `FIREBASE_SERVICE_ACCOUNT_JSON` and an enabled FCM HTTPv1 API. Never put the service account in an Android asset or a `NEXT_PUBLIC_` variable. Sync any changed real environment file to the confirmed Varte destination. Keep signing keys separate from Firebase credentials.
+
+Realtime and push messages are invalidation hints. Existing cursor sync, account-bound native storage and durable queues remain authoritative. Background Android data pushes use normal priority and may be delayed; app activation/reconnection and native retry jobs catch up.

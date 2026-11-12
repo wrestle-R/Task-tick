@@ -8,6 +8,8 @@ One todo list. One watchlist. Two compact widgets. A little more task-tick, a li
 
 ## Version 0.2.3
 
+**Latest release:** [Task-tick v0.2.3](https://github.com/wrestle-R/Task-tick/releases/tag/v0.2.3).
+
 Mobile, Linux desktop and the sidebar integration ship together as **0.2.3** (Android versionCode8). This version adds database-driven Realtime sync for web/desktop and Firebase Cloud Messaging invalidations for Android, including background widget refresh. Offline edits still use the durable native queue. Android battery restrictions can delay background delivery; reconnect/open catches up missed changes.
 
 ## Get it
