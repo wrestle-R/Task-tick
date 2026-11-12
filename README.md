@@ -75,7 +75,9 @@ Visual layout, from top to bottom:
 - No poster images in this small sidebar. Use posters in roomy app views only.
 
 On Linux with Task-tick running, prefer its local store. The CLI reads/writes
-one JSON request via: tick-and-done --ipc '<JSON>'. Read state with
+one JSON request via: task-tick --ipc '<JSON>' (the optional Hyprland installer
+uses the compatibility name tick-and-done). Detect which launcher is installed.
+Read state with
 {"action":"state"}; it returns items, outbox and _account. Every subsequent
 write/search MUST include expectedAccount equal to that returned _account.
 Add: {"action":"add","kind":"todo","title":"Buy coffee","expectedAccount":"UUID"}.

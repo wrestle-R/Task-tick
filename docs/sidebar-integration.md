@@ -10,7 +10,7 @@ The add field stays compact. Typing at least two movie characters debounces serv
 
 ## Linux native adapter
 
-Run the installed desktop app in the background first, then sign in through its window. Its local store is authoritative. Use the installed binary's `--ipc` argument with JSON passed as one argument (use argument arrays, not shell interpolation). It connects to `$XDG_RUNTIME_DIR/tick-and-done.sock`. Socket mode is 0600. The socket speaks one newline-delimited JSON request and one JSON response. It is local, not an HTTP endpoint.
+Run the installed desktop app in the background first, then sign in through its window. Its local store is authoritative. The download installer provides `~/.local/bin/task-tick`; the optional Hyprland installer provides the compatibility launcher `~/.local/bin/tick-and-done`. Detect the installed launcher. Use its `--ipc` argument with JSON passed as one argument (use argument arrays, not shell interpolation). It connects to `$XDG_RUNTIME_DIR/tick-and-done.sock`. Socket mode is 0600. The socket speaks one newline-delimited JSON request and one JSON response. It is local, not an HTTP endpoint.
 
 ```json
 {"action":"state"}

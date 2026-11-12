@@ -724,16 +724,19 @@ function TickApp() {
                   flexGrow: 1,
                 }}
                 keyExtractor={i => i.id}
-                ListEmptyComponent={
-                  <View style={s.empty}>
-                    <Text style={{ fontSize: 38, color: '#8D9F67' }}>✓</Text>
-                    <Text style={[s.emptyTitle, { color: c.ink }]}>
-                      A little breathing room.
-                    </Text>
-                    <Text style={[s.description, { color: c.muted }]}>
-                      Your list is ready when you are.
-                    </Text>
-                  </View>
+                ListHeaderComponent={
+                  items.length === 0 &&
+                  (view === 'trash' || completedItems.length === 0) ? (
+                    <View style={s.empty}>
+                      <Text style={{ fontSize: 38, color: '#8D9F67' }}>✓</Text>
+                      <Text style={[s.emptyTitle, { color: c.ink }]}>
+                        A little breathing room.
+                      </Text>
+                      <Text style={[s.description, { color: c.muted }]}>
+                        Your list is ready when you are.
+                      </Text>
+                    </View>
+                  ) : undefined
                 }
                 renderItem={({ item, index }) => (
                   <TaskRow

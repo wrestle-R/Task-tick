@@ -20,6 +20,8 @@ keytool -genkeypair -noprompt -keystore app/android/app/debug.keystore -storepas
 
 Use `./gradlew :app:assembleDebug` from `app/android` or the React Native CLI. Android configuration uses your website backend to fetch publishable client settings; the app never needs the database password.
 
+For a self-contained local phone preview, run `npm run android:preview` from `app/`, then install `app/android/app/build/outputs/apk/preview/app-preview.apk`. This variant bundles JavaScript and disables developer support, so it loads without Metro or USB forwarding. It uses the local debug signing identity to update an existing development installation without clearing its data; it is not a production release or compatible with production-signed updates. Preserve the matching debug keystore while testing that installation.
+
 Add either widget from the launcher's widget picker. Widget + opens compact add; row text opens details; completion is a separate target. Configure the widget title, light/dark appearance and opacity per instance. Notifications need permission; exact alarms are optional with a delayed fallback.
 
 ## Linux / Hyprland
