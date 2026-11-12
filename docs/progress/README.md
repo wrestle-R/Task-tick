@@ -1,3 +1,9 @@
+## Mobile and compact-widget milestone
+
+Android now uses Todos/Watchlist/combined Trash navigation, inline collapsible completed groups, a floating add action, debounced movie suggestions and posters in the app. Widgets use 13sp single-line text, 28dp rows, a 32dp header and smaller padding; posters are removed from widget rendering and configuration.
+
+App TypeScript and Android debug compilation pass. These source/build checks do not establish physical launcher tap, resize or reminder acceptance; the device driver remains blocked on leaving the app for launcher controls.
+
 # Interface milestones, 2026-11-12
 
 Web and desktop now use a top bar with Todos, Watchlist and a combined Trash. Completed rows stay below unfinished rows and collapse as a group. Movie entry provides debounced TMDB suggestions with cancellation/account guards and optional posters. The website uses copied Skeuomorphism UI button/theme/switch/surface components with local native CSS.

@@ -4,6 +4,8 @@ import {
   Animated,
   AppState,
   FlatList,
+  SectionList,
+  Image,
   Linking,
   Modal,
   NativeModules,
@@ -76,6 +78,22 @@ function TickApp() {
     [results, setResults] = useState<any[]>([]),
     [undo, setUndo] = useState<any>(null),
     [subtask, setSubtask] = useState('');
+  const [completedOpen, setCompletedOpen] = useState(true);
+  const [composing, setComposing] = useState(false);
+  const searchGeneration = useRef(0);
+  useEffect(() => {
+    const generation = ++searchGeneration.current;
+    setResults([]);
+    if(kind !== 'movie' || !composing || title.trim().length < 2 || !snap.account) return;
+    const account = snap.account;
+    const timer = setTimeout(async () => {
+      try {
+        const value = JSON.parse(await native.search(title.trim()));
+        if(searchGeneration.current === generation && account === snap.account) setResults(value.results);
+      } catch(e) {if(searchGeneration.current === generation) setError((e as Error).message);}
+    }, 350);
+    return () => {clearTimeout(timer);searchGeneration.current++;};
+  }, [title, kind, composing, snap.account]);
   const pendingLink = useRef<string | null>(null);
   async function refresh(lifecycle = false) {
     try {
@@ -172,7 +190,7 @@ function TickApp() {
           i.title.toLowerCase() === name.toLowerCase(),
       );
     const save = async () => {
-      if (await mutate(kind, { title: name })) setTitle('');
+      if (await mutate(kind, { title: name })) {setTitle('');setComposing(false);}
     };
     if (exists)
       Alert.alert(
@@ -265,15 +283,17 @@ function TickApp() {
     });
     setResults([]);
     setQuery('');
+    setTitle('');
+    setComposing(false);
   }
-  const all = snap.state.items.filter(i => i.kind === kind),
-    items = all
-      .filter(i =>
-        view === 'trash'
-          ? !!i.deletedAt && Date.parse(i.deletedAt) > Date.now() - 7 * 86400000
-          : !i.deletedAt && i.done === (view === 'done'),
-      )
-      .sort(compareItems);
+  const all = snap.state.items.filter(i => i.kind === kind);
+  const activeItems = all.filter(i => !i.deletedAt && !i.done).sort(compareItems);
+  const completedItems = all.filter(i => !i.deletedAt && i.done).sort((a,b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
+  const items = view === 'trash'
+    ? snap.state.items.filter(i => i.deletedAt && Date.parse(i.deletedAt) > Date.now() - 7 * 86400000).sort((a,b) => Date.parse(b.deletedAt!) - Date.parse(a.deletedAt!))
+    : activeItems;
+  const sections = view === 'trash' ? [{title:'Deleted recently', data:items}]
+    : [{title:'', data:activeItems}, ...(completedItems.length ? [{title:kind === 'todo' ? 'Completed' : 'Watched', data:completedOpen ? completedItems : []}] : [])];
   function reorder(index: number, delta: number) {
     if (view !== 'active') return;
     const target = Math.max(
@@ -384,77 +404,17 @@ function TickApp() {
       ) : (
         <>
           <View style={s.modes}>
-            {(['todo', 'movie'] as Kind[]).map(k => (
-              <Pressable
-                style={[s.mode, kind === k && s.modeActive]}
-                key={k}
-                onPress={() => {
-                  setKind(k);
-                  setView('active');
-                  setResults([]);
-                }}
-              >
-                <Text
-                  style={{
-                    color: kind === k ? c.accentInk : c.muted,
-                    fontSize: 12,
-                  }}
-                >
-                  {k === 'todo' ? '✓  My todos' : '▤  Watchlist'}
-                </Text>
-              </Pressable>
-            ))}
+            {(['todo', 'movie', 'trash'] as const).map(tab => {
+              const chosen = tab === 'trash' ? view === 'trash' : kind === tab && view !== 'trash';
+              return <Pressable key={tab} accessibilityRole="tab" accessibilityState={{selected:chosen}}
+                style={[s.mode, chosen && s.modeActive]}
+                onPress={() => {if(tab !== 'trash') setKind(tab);setView(tab === 'trash' ? 'trash' : 'active');setResults([]);setComposing(false);setTitle('');}}>
+                <Text style={{color:chosen ? c.ink : c.muted, fontSize:14, fontWeight:chosen ? '700' : '500'}}>{tab === 'todo' ? 'Todos' : tab === 'movie' ? 'Watchlist' : 'Trash'}</Text>
+              </Pressable>;
+            })}
           </View>
-          <View style={s.heading}>
-            <Text style={[s.eyebrow, { color: c.muted }]}>
-              {kind === 'todo'
-                ? 'ONE THING AT A TIME'
-                : 'FOR YOUR NEXT NIGHT IN'}
-            </Text>
-            <Text style={[s.title, { color: c.ink }]}>
-              {view === 'trash'
-                ? 'A second thought.'
-                : view === 'history'
-                  ? 'A little rewind.'
-                  : view === 'done'
-                    ? 'Done & dusted.'
-                    : kind === 'todo'
-                      ? 'Less thinking.'
-                      : 'Worth watching.'}
-            </Text>
-            <Text style={[s.description, { color: c.muted }]}>
-              {all.filter(i => !i.deletedAt && !i.done && !i.parentId).length}{' '}
-              {kind === 'todo'
-                ? 'things to do. You’ve got this.'
-                : 'stories waiting for you.'}
-            </Text>
-          </View>
-          <View style={[s.tabs, { borderColor: c.line }]}>
-            {(['active', 'done', 'trash', 'history'] as const).map(v => (
-              <Pressable key={v} onPress={() => setView(v)}>
-                <Text
-                  style={[
-                    s.tab,
-                    { color: c.muted },
-                    view === v && { color: c.ink, borderBottomColor: c.ink },
-                  ]}
-                >
-                  {v === 'active'
-                    ? kind === 'todo'
-                      ? 'To do'
-                      : 'To watch'
-                    : v === 'done'
-                      ? kind === 'todo'
-                        ? 'Done'
-                        : 'Watched'
-                      : v === 'trash'
-                        ? 'Trash'
-                        : 'History'}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
-          {view === 'active' && (
+          {view === 'trash' && <Text style={[s.description,{paddingHorizontal:22,marginBottom:14}]}>Todos and titles stay here for seven days.</Text>}
+          {view === 'active' && composing && (
             <View
               style={[
                 s.capture,
@@ -482,21 +442,6 @@ function TickApp() {
               </Pressable>
             </View>
           )}
-          {kind === 'movie' && view === 'active' && (
-            <View style={s.movieSearch}>
-              <TextInput
-                style={[s.movieInput, { color: c.ink, borderColor: c.line }]}
-                placeholder="Find a title on TMDB…"
-                placeholderTextColor={c.muted}
-                value={query}
-                onChangeText={setQuery}
-                onSubmitEditing={() => void search()}
-              />
-              <Pressable onPress={() => void search()}>
-                <Text style={[s.link, { color: c.muted }]}>Search ↗</Text>
-              </Pressable>
-            </View>
-          )}
           {results.length > 0 ? (
             <FlatList
               data={results.filter(
@@ -508,6 +453,7 @@ function TickApp() {
                   onPress={() => void addResult(item)}
                   style={[s.result, { borderColor: c.line }]}
                 >
+                  {item.poster_path && <Image source={{uri:`https://image.tmdb.org/t/p/w92${item.poster_path}`}} style={s.poster}/>}
                   <Text style={[s.itemTitle, { color: c.ink }]}>
                     {item.title ?? item.name}
                   </Text>
@@ -559,10 +505,13 @@ function TickApp() {
               )}
             />
           ) : (
-            <FlatList
-              data={items}
+            <SectionList
+              sections={sections}
+              stickySectionHeadersEnabled={false}
+              renderSectionHeader={({section}) => section.title ? <Pressable style={s.completedHeader} onPress={() => setCompletedOpen(!completedOpen)} accessibilityRole="button" accessibilityState={{expanded:completedOpen}}><Text style={{color:c.muted,fontWeight:'600'}}>{section.title}</Text><Text style={{color:c.muted,fontSize:12}}>{view === 'trash' ? items.length : completedItems.length} {completedOpen ? '⌄' : '›'}</Text></Pressable> : null}
               contentContainerStyle={{
-                paddingHorizontal: 24,
+                paddingHorizontal: 16,
+                paddingTop: 12,
                 paddingBottom: 90,
                 flexGrow: 1,
               }}
@@ -590,11 +539,12 @@ function TickApp() {
                   }}
                   onOpen={() => setSelected(item)}
                   onMove={delta => reorder(index, delta)}
-                  draggable={view === 'active'}
+                  draggable={view === 'active' && !item.done}
                 />
               )}
             />
           )}
+          {view === 'active' && <Pressable accessibilityRole="button" accessibilityLabel={composing ? 'Close quick add' : 'Add item'} onPress={() => {setComposing(!composing);setResults([]);}} style={s.fab}><Text style={{fontSize:32,lineHeight:36,color:c.accentInk}}>{composing ? '×' : '+'}</Text></Pressable>}
           <View style={[s.footer, { borderColor: c.line }]}>
             <Text style={{ color: c.muted, fontSize: 10 }}>
               ● Saved on this device
@@ -817,6 +767,7 @@ function TickApp() {
                 </Pressable>
               ))}
             </View>
+            {snap.account && <Pressable onPress={() => {setView('history');setSettings(false);}}><Text style={[s.link,{color:c.ink,marginBottom:20}]}>Edit history · last 7 days ↗</Text></Pressable>}
             {label('REMINDER HEALTH')}
             <Text style={[s.description, { color: c.muted }]}>
               {snap.preciseAlarms
@@ -924,6 +875,7 @@ function TaskRow({
           {trash ? '↶' : item.done ? '✓' : ''}
         </Text>
       </Pressable>
+      {item.kind === 'movie' && item.poster && <Image source={{uri:`https://image.tmdb.org/t/p/w92${item.poster}`}} style={s.poster}/>}
       <Pressable onPress={onOpen} style={{ flex: 1 }}>
         <Text
           style={[
@@ -979,13 +931,13 @@ const makeStyles = (palette: typeof themes.light | typeof themes.dark) => StyleS
   root: { flex: 1 },
   header: {
     paddingHorizontal: 25,
-    paddingTop: 22,
-    paddingBottom: 24,
+    paddingTop: 12,
+    paddingBottom: 18,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
   },
-  brand: { fontFamily: 'Manrope', fontSize: 23, fontWeight: '700', letterSpacing: -1 },
+  brand: { fontFamily: 'Manrope', fontSize: 20, fontWeight: '700', letterSpacing: -1 },
   logo: { color: '#8D9F67', fontSize: 27 },
   auth: { padding: 28, paddingTop: 40, paddingBottom: 80 },
   eyebrow: { fontSize: 9, letterSpacing: 2, fontWeight: '600' },
@@ -1008,9 +960,9 @@ const makeStyles = (palette: typeof themes.light | typeof themes.dark) => StyleS
   },
   primaryText: { color: palette.accentInk, fontWeight: '600', fontSize: 14 },
   link: { fontSize: 12, marginTop: 19 },
-  modes: { flexDirection: 'row', gap: 7, paddingHorizontal: 24 },
-  mode: { paddingHorizontal: 14, paddingVertical: 11, borderRadius: 8 },
-  modeActive: { backgroundColor: palette.accent },
+  modes: { flexDirection: 'row', gap: 4, marginHorizontal: 16, backgroundColor:palette.sidebar, padding:4, borderRadius:12 },
+  mode: { flex:1, alignItems:'center', paddingHorizontal:12, paddingVertical:12, borderRadius:9 },
+  modeActive: { backgroundColor: palette.surface, shadowColor:'#000',shadowOffset:{width:0,height:2},shadowOpacity:.1,shadowRadius:3,elevation:2 },
   heading: { paddingHorizontal: 26, paddingTop: 33, paddingBottom: 26 },
   title: {
     fontFamily: 'Manrope',
@@ -1051,13 +1003,19 @@ const makeStyles = (palette: typeof themes.light | typeof themes.dark) => StyleS
     padding: 9,
     borderRadius: 6,
   },
+  poster:{width:28,height:42,borderRadius:4,marginRight:4},
+  completedHeader:{flexDirection:'row',justifyContent:'space-between',alignItems:'center',backgroundColor:palette.surface,padding:16,marginTop:12,borderTopLeftRadius:14,borderTopRightRadius:14},
+  fab:{position:'absolute',bottom:70,right:23,width:56,height:56,borderRadius:28,alignItems:'center',justifyContent:'center',backgroundColor:palette.accent,shadowColor:'#000',shadowOffset:{width:0,height:4},shadowOpacity:.2,shadowRadius:8,elevation:5},
   row: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 13,
-    borderBottomWidth: 1,
-    minHeight: 80,
-    paddingVertical: 15,
+    backgroundColor:palette.surface,
+    borderBottomWidth: 0,
+    minHeight: 54,
+    paddingHorizontal:14,
+    paddingVertical: 10,
+    borderRadius:8,
   },
   check: {
     width: 21,
@@ -1071,8 +1029,8 @@ const makeStyles = (palette: typeof themes.light | typeof themes.dark) => StyleS
   footer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    padding: 20,
-    borderTopWidth: 1,
+    padding: 14,
+    borderTopWidth: 0,
   },
   empty: {
     flex: 1,
