@@ -1,3 +1,7 @@
+## Final redesign checks
+
+13 core tests, workspace/app TypeScript, five native Rust tests (one live-notification test explicitly ignored), eight reversible integration installer tests and three Spotify helper tests pass. Browser acceptance covers sign-in, offline reload/reconnect, completion/Undo, completed grouping, combined Trash, manual titles and real TMDB autocomplete. For the autocomplete run, browser requests used the production authenticated movies proxy because local Node fetch to TMDB returned ECONNRESET; the local route failure remains an environment limitation. The deployed proxy returned real results. The original landing page passes its four-width theme/navigation/hero checks after restoration. Android production APK passes apksigner verification. No published native release or later-version update-install acceptance is claimed.
+
 ## Mobile and compact-widget milestone
 
 Android now uses Todos/Watchlist/combined Trash navigation, inline collapsible completed groups, a floating add action, debounced movie suggestions and posters in the app. Widgets use 13sp single-line text, 28dp rows, a 32dp header and smaller padding; posters are removed from widget rendering and configuration.
@@ -6,7 +10,7 @@ App TypeScript and Android debug compilation pass. These source/build checks do 
 
 # Interface milestones, 2026-11-12
 
-Web and desktop now use a top bar with Todos, Watchlist and a combined Trash. Completed rows stay below unfinished rows and collapse as a group. Movie entry provides debounced TMDB suggestions with cancellation/account guards and optional posters. The website uses copied Skeuomorphism UI button/theme/switch/surface components with local native CSS.
+Web and desktop now use a top bar with Todos, Watchlist and a combined Trash. Completed rows stay below unfinished rows and collapse as a group. Movie entry provides debounced TMDB suggestions with cancellation/account guards and optional posters. The web workspace uses copied Skeuomorphism UI button/theme/switch components with local native CSS. The public landing page preserves the user-approved fold-art direction.
 
 Verified: production Next/Vite builds, workspace typechecks, real browser sign-in/offline reload/reconnect/Undo, combined cross-list Trash and completed grouping. Marketing checks at 1366/1024/390/320 pass theme persistence, menu Escape/focus, first-view action and overflow/runtime checks.
 
@@ -91,3 +95,13 @@ Sidebar writes now require the account marker returned by its last state read; s
 Four Rust tests pass, plus the explicitly invoked live D-Bus notification create/close check. This proves service acceptance, not visible tray/notification presentation. Twelve core tests, workspace/app typechecks, web/desktop production builds, Android debug/release builds and seven installer lifecycle tests pass. Linux deb/AppImage rebuild completed. On Android16, signing out cleared visible widget account content; signing into a second disposable account showed an empty workspace. Full retained-offline/account-transition and notification lifecycle matrices remain open.
 
 Recovery acceptance: the user corrected an earlier old-link observation and supplied the current production password-update screen. Real email delivery and the production recovery form therefore pass. A separate disposable-account hosted integration passes recovery session ownership, password update, old-password rejection, new-password sign-in and invalid/reused-token rejection; the fixture was removed. The real mailbox's password was not changed. Shared auth Site URL was preserved, and no email-template change was needed.
+
+## Sidebar, account and update milestone (2026-11-12)
+
+The installed Quickshell panel uses existing Appearance colors and custom compact controls. Unfinished rows precede recent completed rows; spare-height calculation hides overflow completions without modifying data. Movie autocomplete uses a native-memory user session proxy; no session or TMDB token is returned through the socket. TMDB identities/poster paths persist on add, and duplicate matches return the existing item. Native tests cover duplicate mutation prevention and stale/search account boundaries.
+
+Live evidence: installed native IPC returned 17 Arrival search results; actual sidebar empty-input Space changed paused to playing on the same track. Playback was restored. A nonempty `draft text` preserved a normal space and did not change playback. The native desktop signed into the owner's existing verified account without a password reset. Android0.2.0 debug updated the connected phone without clearing data, but physical UI/account sign-in and widget/reminder acceptance remain blocked by the driver. Earlier emulator evidence is not a substitute for that acceptance.
+
+Release source adds a Linux AppImage updater with an embedded public signing key, private key stored outside Git and configured in GitHub's native-release environment, plus Android checksum-verified APK download into the system installer. Version0.2.0/code5 debug and production Linux deb/AppImage/signatures build locally. Release endpoints return no release/HTTP204 while none is published; drafts are never updates. Update installation against a later published release remains unverified. Native macOS/Windows packages are not published; those platforms use the web app.
+
+The README now links the download page and provides a Task-tick-specific checksum-verifying installer, a fixture-only actual sidebar screenshot and a detailed cross-platform reproduction prompt. The approved public landing page was restored unchanged after the user's correction.
