@@ -36,7 +36,8 @@ class TickRepository private constructor(private val context: Context) : SQLiteO
  private fun empty()=JSONObject("{\"items\":[],\"outbox\":[],\"history\":[],\"cursor\":0}")
  @Synchronized fun read():JSONObject {val a=account()?:return empty();readableDatabase.rawQuery("SELECT state FROM accounts WHERE id=?",arrayOf(a)).use{if(it.moveToFirst())return JSONObject(it.getString(0))};return empty()}
  private fun save(s:JSONObject){val a=account()?:throw IllegalStateException("Sign in first");writableDatabase.insertWithOnConflict("accounts",null,ContentValues().apply{put("id",a);put("state",s.toString())},SQLiteDatabase.CONFLICT_REPLACE)}
- @Synchronized fun snapshot():JSONObject=JSONObject().put("state",read()).put("email",prefs.getString("email",null)).put("account",account()).put("backend",backend()).put("preciseAlarms",Reminders.canScheduleExact(context)).put("appearance",appearance())
+ @Synchronized fun snapshot():JSONObject=JSONObject().put("online",online()).put("lastSyncAt",prefs.getLong("lastSyncAt-${account()}",0)).put("syncError",prefs.getString("syncError-${account()}","")).put("state",read()).put("email",prefs.getString("email",null)).put("account",account()).put("backend",backend()).put("preciseAlarms",Reminders.canScheduleExact(context)).put("appearance",appearance())
+ fun online():Boolean {val manager=context.getSystemService(android.net.ConnectivityManager::class.java);val caps=manager.getNetworkCapabilities(manager.activeNetwork)?:return false;return caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_VALIDATED)}
  private fun key():javax.crypto.SecretKey{val ks=KeyStore.getInstance("AndroidKeyStore").apply{load(null)};return (ks.getKey("tick-session",null) as? javax.crypto.SecretKey)?:KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES,"AndroidKeyStore").apply{init(KeyGenParameterSpec.Builder("tick-session",KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT).setBlockModes(KeyProperties.BLOCK_MODE_GCM).setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE).build())}.generateKey()}
  private fun writeSession(value:JSONObject){val c=Cipher.getInstance("AES/GCM/NoPadding");c.init(Cipher.ENCRYPT_MODE,key());val data=c.iv+c.doFinal(value.toString().toByteArray());prefs.edit().putString("session",Base64.encodeToString(data,Base64.NO_WRAP)).commit()}
  private fun session():JSONObject{val bytes=Base64.decode(prefs.getString("session",null)?:throw IllegalStateException("Sign in again to sync. Saved edits are safe."),Base64.NO_WRAP);val c=Cipher.getInstance("AES/GCM/NoPadding");c.init(Cipher.DECRYPT_MODE,key(),GCMParameterSpec(128,bytes.copyOfRange(0,12)));return JSONObject(String(c.doFinal(bytes.copyOfRange(12,bytes.size))))}
@@ -149,9 +150,17 @@ class TickRepository private constructor(private val context: Context) : SQLiteO
   return JSONObject().put("items",JSONArray(items.values.toList())).put("history",JSONArray(history.values.toList())).put("accepted",JSONArray(accepted.toList())).put("cursor",cursor)
  }
  fun sync():JSONObject = synchronized(syncLock) {
-  val (a,generation)=synchronized(this){val owner=account()?:return snapshot();owner to authGeneration};val token=accessToken();val before=synchronized(this){if(a!=account()||authGeneration!=generation)return snapshot();read()};val result=collectPages(a,generation,token,before)
-  applyServerResult(a,generation,result)
-  Widgets.refresh(context);Reminders.schedule(context);cachePosters();return snapshot()
+  val (a,generation)=synchronized(this){val owner=account()?:return snapshot();owner to authGeneration}
+  try {
+   check(online()){ "Offline. Changes are saved on this device." }
+   val token=accessToken();val before=synchronized(this){if(a!=account()||authGeneration!=generation)return snapshot();read()};val result=collectPages(a,generation,token,before)
+   applyServerResult(a,generation,result)
+   synchronized(this){if(a==account()&&authGeneration==generation)prefs.edit().putLong("lastSyncAt-$a",System.currentTimeMillis()).remove("syncError-$a").commit()}
+   Widgets.refresh(context);Reminders.schedule(context);cachePosters();return snapshot()
+  } catch(e:Exception) {
+   synchronized(this){if(a==account()&&authGeneration==generation)prefs.edit().putString("syncError-$a",e.message?:"Sync failed. Changes are saved on this device.").commit()}
+   throw e
+  }
  }
  fun posterFile(path:String):java.io.File=java.io.File(context.cacheDir,"posters/"+java.security.MessageDigest.getInstance("SHA-256").digest(path.toByteArray()).joinToString(""){"%02x".format(it)}+".jpg")
  private fun cachePosters(){val items=read().getJSONArray("items");var fetched=0;for(i in 0 until items.length()){val item=items.getJSONObject(i);val path=item.optString("poster");if(item.optString("kind")!="movie"||!path.matches(Regex("^/[a-zA-Z0-9._-]+$")))continue;val file=posterFile(path);if(file.exists()||fetched>=10)continue;try{val con=URL("https://image.tmdb.org/t/p/w92$path").openConnection() as HttpURLConnection;con.connectTimeout=3000;con.readTimeout=3000;val data=con.inputStream.use{it.readNBytes(600000)};con.disconnect();if(data.isNotEmpty()&&data.size<600000){file.parentFile?.mkdirs();val temp=java.io.File(file.path+".tmp");temp.writeBytes(data);temp.renameTo(file);fetched++}}catch(_:Exception){}};if(fetched>0)Widgets.refresh(context)}

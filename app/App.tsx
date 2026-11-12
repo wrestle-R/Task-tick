@@ -21,7 +21,7 @@ import {
 } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import type { Item, Kind, State, Fields } from '../packages/core/src/index';
-import { compareItems, planMove } from '../packages/core/src/index';
+import { compareItems, planMove, syncStatus } from '../packages/core/src/index';
 import { themes, themeGeometry } from '../packages/core/src/theme';
 const TextTone = createContext<string>(themes.light.ink);
 const Text = (props: React.ComponentProps<typeof NativeText>) => { const color = useContext(TextTone); return <NativeText {...props} style={[{fontFamily: 'DMSans', color}, props.style]} />; };
@@ -32,6 +32,9 @@ type Snapshot = {
   email: string | null;
   backend: string;
   preciseAlarms: boolean;
+  online: boolean;
+  lastSyncAt: number;
+  syncError: string;
   appearance: 'system' | 'light' | 'dark';
 };
 const native = NativeModules.TickStore;
@@ -41,6 +44,9 @@ const blank: Snapshot = {
   email: null,
   backend: '',
   preciseAlarms: false,
+  online: false,
+  lastSyncAt: 0,
+  syncError: "",
   appearance: native?.appearance ?? 'system',
 };
 export default function App() {
@@ -64,6 +70,7 @@ function TickApp() {
     [password, setPassword] = useState(''),
     [authMode, setAuthMode] = useState('login'),
     [busy, setBusy] = useState(false),
+    [syncing, setSyncing] = useState(false),
     [error, setError] = useState(''),
     [query, setQuery] = useState(''),
     [results, setResults] = useState<any[]>([]),
@@ -92,18 +99,10 @@ function TickApp() {
     }
   }
   async function sync() {
-    try {
-      setBusy(true);
-      setSnap(JSON.parse(await native.sync()));
-      setError('');
-    } catch (e) {
-      const message = (e as Error).message;
-      setError(/resolve host|network|connect|timed? ?out/i.test(message)
-        ? 'Saved on this device. Sync will retry when you’re online.'
-        : message);
-    } finally {
-      setBusy(false);
-    }
+    setSyncing(true);
+    try {setSnap(JSON.parse(await native.sync()));}
+    catch {setSnap(JSON.parse(await native.snapshot()));}
+    finally {setSyncing(false);}
   }
   useEffect(() => {
     if (!native) {
@@ -602,20 +601,16 @@ function TickApp() {
             </Text>
             <Pressable onPress={() => void sync()}>
               <Text style={{ color: c.muted, fontSize: 10 }}>
-                {busy
-                  ? 'Syncing…'
-                  : snap.state.outbox.length
-                    ? `${snap.state.outbox.length} pending ↗`
-                    : 'Up to date ↗'}
+                {syncStatus({online:snap.online,pending:snap.state.outbox.length,syncing,lastSyncAt:snap.lastSyncAt,error:snap.syncError})} ↗
               </Text>
             </Pressable>
           </View>
         </>
       )}
-      {error !== '' && (
+      {(error || snap.syncError) !== '' && (
         <Pressable style={s.error} onPress={() => setError('')}>
           <Text style={{ color: c.error, fontSize: 12, lineHeight: 18 }}>
-            {error} ×
+            {error || snap.syncError} ×
           </Text>
         </Pressable>
       )}

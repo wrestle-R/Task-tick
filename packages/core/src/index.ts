@@ -1,4 +1,11 @@
 export type Kind = "todo" | "movie";
+export function syncStatus(status: {online:boolean;pending:number;syncing:boolean;lastSyncAt:number;error:string}):string {
+  if (!status.online) return status.pending ? `Offline · ${status.pending} pending` : 'Offline · saved here';
+  if (status.syncing) return 'Syncing…';
+  if (status.error) return 'Sync needs attention';
+  if (status.pending) return `${status.pending} pending`;
+  return status.lastSyncAt ? 'Up to date' : 'Waiting to sync';
+}
 export type Fields = {
   title: string;
   done: boolean;

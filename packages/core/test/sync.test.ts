@@ -146,3 +146,12 @@ test("exhausted rank spacing rebalances without removing concurrent inserts or e
   assert.equal(state.items.find(i=>i.id===a.id)?.notes,"independent edit");
   assert.deepEqual([...state.items].reverse().sort(compareItems).map(i=>i.id), visible(state,"todo").map(i=>i.id));
 });
+
+test("sync status never claims an empty offline or failed account is up to date", async () => {
+  const {syncStatus} = await import('../src/index.ts');
+  assert.equal(syncStatus({online:false,pending:0,syncing:false,lastSyncAt:0,error:''}), 'Offline · saved here');
+  assert.equal(syncStatus({online:false,pending:2,syncing:false,lastSyncAt:1,error:''}), 'Offline · 2 pending');
+  assert.equal(syncStatus({online:true,pending:0,syncing:false,lastSyncAt:1,error:'Session expired'}), 'Sync needs attention');
+  assert.equal(syncStatus({online:true,pending:0,syncing:false,lastSyncAt:0,error:''}), 'Waiting to sync');
+  assert.equal(syncStatus({online:true,pending:0,syncing:false,lastSyncAt:1,error:''}), 'Up to date');
+});
