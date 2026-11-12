@@ -35,5 +35,6 @@
 <receiver android:name=".ReminderReceiver" android:exported="false"><intent-filter><action android:name="android.intent.action.BOOT_COMPLETED"/><action android:name="android.intent.action.TIME_SET"/><action android:name="android.intent.action.TIMEZONE_CHANGED"/><action android:name="android.app.action.SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED"/></intent-filter></receiver>
 <service android:name=".WidgetRowsService" android:permission="android.permission.BIND_REMOTEVIEWS" android:exported="false"/>
 <service android:name=".TickSyncJob" android:permission="android.permission.BIND_JOB_SERVICE" android:exported="true"/>
+<service android:name=".PushMessaging" android:exported="false"><intent-filter><action android:name="com.google.firebase.MESSAGING_EVENT"/></intent-filter></service>
 </application>
 </manifest>

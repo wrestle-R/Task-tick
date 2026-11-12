@@ -1,3 +1,5 @@
+import { after } from "next/server";
+import { signalDevices } from "../../../lib/push";
 import { allowRequest } from "../../../lib/limits";
 import { authenticated } from "../../../lib/server";
 import { validatePatch, type Mutation } from "@tick/core";
@@ -44,6 +46,7 @@ export async function POST(request: Request) {
       ...(body.protocol === 2 ? { until_cursor: body.pullUntil ?? null, history_after: body.historyAfter ?? 0, history_until: body.historyUntil ?? null } : {}),
     });
     if (error) throw new Error(error.message);
+    if(body.mutations.length) after(async()=>{try{await signalDevices(client,user.id);}catch{console.warn("Task-tick push hint failed; cursor catch-up remains available");}});
     return Response.json(data, { headers: { "Cache-Control": "no-store" } });
   } catch (e) {
     const message = (e as Error).message;

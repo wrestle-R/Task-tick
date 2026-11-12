@@ -115,7 +115,7 @@ class TickRepository private constructor(private val context: Context) : SQLiteO
    writableDatabase.beginTransaction();try{save(s);writableDatabase.setTransactionSuccessful()}finally{writableDatabase.endTransaction()};snapshot()
   };Widgets.refresh(context);scheduleSync();return result
  }
- fun resume():JSONObject{if(account()!=null){scheduleSync();Reminders.schedule(context);Reminders.notifyDue(context)};return snapshot()}
+ fun resume():JSONObject{PushMessaging.prepare(context);if(account()!=null){scheduleSync();Reminders.schedule(context);Reminders.notifyDue(context)};return snapshot()}
  fun scheduleSync(){val scheduler=context.getSystemService(JobScheduler::class.java);scheduler.schedule(JobInfo.Builder(100,ComponentName(context,TickSyncJob::class.java)).setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY).setOverrideDeadline(1000).build());scheduler.schedule(JobInfo.Builder(101,ComponentName(context,TickSyncJob::class.java)).setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY).setPeriodic(15*60*1000L).setPersisted(true).build())}
  private fun applyServerResult(owner:String,generation:Long,result:JSONObject) {
   synchronized(this){if(owner!=account()||authGeneration!=generation)return;val current=read();val accepted=result.getJSONArray("accepted");val ack=(0 until accepted.length()).map{accepted.getString(it)}.toSet();val remaining=JSONArray();val queue=current.getJSONArray("outbox");for(i in 0 until queue.length())if(!ack.contains(queue.getJSONObject(i).getString("id")))remaining.put(queue.getJSONObject(i));
@@ -155,6 +155,11 @@ class TickRepository private constructor(private val context: Context) : SQLiteO
    check(online()){ "Offline. Changes are saved on this device." }
    val token=accessToken();val before=synchronized(this){if(a!=account()||authGeneration!=generation)return snapshot();read()};val result=collectPages(a,generation,token,before)
    applyServerResult(a,generation,result)
+   try {
+    val push=context.getSharedPreferences("tick-push",Context.MODE_PRIVATE);val device=push.getString("token",null)
+    val registered="$a:$device:${java.time.LocalDate.now()}"
+    if(device!=null && push.getString("registered",null)!=registered && account()==a && authGeneration==generation){request("${backend()}/api/push",JSONObject().put("token",device),token);if(account()==a&&authGeneration==generation)push.edit().putString("registered",registered).apply()}
+   }catch(_:Exception){ /* Push registration retries on the next successful sync. */ }
    synchronized(this){if(a==account()&&authGeneration==generation)prefs.edit().putLong("lastSyncAt-$a",System.currentTimeMillis()).remove("syncError-$a").commit()}
    Widgets.refresh(context);Reminders.schedule(context);cachePosters();return snapshot()
   } catch(e:Exception) {

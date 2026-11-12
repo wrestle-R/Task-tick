@@ -6,6 +6,10 @@ One todo list. One watchlist. Two compact widgets. A little more task-tick, a li
 
 [Open the app](https://task-tick-beige.vercel.app/app) · [Downloads](https://task-tick-beige.vercel.app/downloads) · [Releases](https://github.com/wrestle-R/Task-tick/releases)
 
+## Version 0.2.1
+
+Mobile, Linux desktop and the sidebar integration ship together as **0.2.1** (Android versionCode6). This version adds database-driven Realtime sync for web/desktop and Firebase Cloud Messaging invalidations for Android, including background widget refresh. Offline edits still use the durable native queue. Android battery restrictions can delay background delivery; reconnect/open catches up missed changes.
+
 ## Get it
 
 **Android:** [Download the APK](https://task-tick-beige.vercel.app/downloads). Todos and Movies widgets are included in the app; add them through your launcher's widget picker.

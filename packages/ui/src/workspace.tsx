@@ -141,6 +141,7 @@ export function Workspace({
     accountRef = useRef(""),
     queue = useRef(Promise.resolve()),
     syncLock = useRef(false);
+  const syncRequested = useRef(false);
   useEffect(() => {
     stateRef.current = state;
   }, [state]);
@@ -270,8 +271,8 @@ export function Workspace({
     [storage],
   );
   const sync = useCallback(async () => {
-    if (!session || !config || !ready || !navigator.onLine || syncLock.current)
-      return;
+    if (!session || !config || !ready || !navigator.onLine) return;
+    if (syncLock.current) { syncRequested.current = true; return; }
     syncLock.current = true;
     setSyncing(true);
     const account = session.user.id;
@@ -337,21 +338,26 @@ export function Workspace({
     } finally {
       syncLock.current = false;
       setSyncing(false);
+      if (syncRequested.current) { syncRequested.current = false; setTimeout(() => void sync(), 0); }
     }
   }, [session, config, ready, client, change]);
   useEffect(() => {
     if (!ready) return;
     void sync();
-    const timer = setInterval(() => void sync(), 15000);
+    // RLS filters account-owned rows. Events only trigger authoritative cursor sync.
+    const channel = client && session ? client.channel(`tick-${session.user.id}`)
+      .on('postgres_changes', {event:'*',schema:'public',table:'code-todo',filter:`user_id=eq.${session.user.id}`}, () => void sync())
+      .on('postgres_changes', {event:'*',schema:'public',table:'movies-todo',filter:`user_id=eq.${session.user.id}`}, () => void sync())
+      .subscribe(status => { if(status === 'SUBSCRIBED') void sync(); }) : null;
     const onFocus = () => void sync();
     window.addEventListener("online", onFocus);
     window.addEventListener("focus", onFocus);
     return () => {
-      clearInterval(timer);
+      if(channel) void client!.removeChannel(channel);
       window.removeEventListener("online", onFocus);
       window.removeEventListener("focus", onFocus);
     };
-  }, [ready, sync]);
+  }, [ready, sync, client, session]);
   useEffect(() => {
     if (!undo) return;
     const timer = setTimeout(

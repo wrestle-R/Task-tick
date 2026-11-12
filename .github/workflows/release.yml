@@ -56,6 +56,13 @@ jobs:
           packages: platform-tools
           log-accepted-android-sdk-licenses: false
       - run: sdkmanager 'platforms;android-37.0' 'build-tools;37.0.0' 'ndk;27.1.12297006'
+      - name: Restore Firebase Android configuration
+        env:
+          FIREBASE_CONFIG: ${{ secrets.TICK_FIREBASE_ANDROID_CONFIG }}
+        run: |
+          if [ -n "$FIREBASE_CONFIG" ]; then
+            printf '%s' "$FIREBASE_CONFIG" > app/android/app/google-services.json
+          fi
       - run: npm ci --prefix app
       - name: Restore signing identity
         env:

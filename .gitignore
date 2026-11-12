@@ -34,3 +34,6 @@ supabase/.temp/
 
 # Generated Tauri permission schemas
 desktop/src-tauri/gen/
+
+# Firebase configuration is injected for configured native builds.
+/app/android/app/google-services.json
