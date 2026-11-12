@@ -1,6 +1,6 @@
 [package]
 name = "tick-and-done"
-version = "0.1.1"
+version = "0.2.0"
 description = "An offline-first home for todos and your watchlist"
 edition = "2021"
 
@@ -16,3 +16,5 @@ rusqlite = { version = "0.37", features = ["bundled"] }
 uuid = { version = "1", features = ["v4"] }
 chrono = { version = "0.4", features = ["serde"] }
 dbus = "=0.9.12"
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
+tauri-plugin-updater = "2"

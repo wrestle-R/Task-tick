@@ -59,6 +59,8 @@ export default async function Downloads() {
           </p>
         </>
       )}
+      <h2>Updates</h2>
+      <p>The Linux AppImage checks for published releases and shows an Update button. It verifies the update signature before installing and restarting. Debian packages update through your package manager. On Android, Update downloads the APK, checks its checksum and opens Android’s install confirmation. Draft releases are never offered.</p>
       <h2>Before installing</h2>
       <p>
         Use the checksum included with the release. Android may ask you to allow

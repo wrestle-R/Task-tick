@@ -7,15 +7,15 @@ try {
  const page=await browser.newPage();const errors=[];page.on('pageerror',error=>errors.push(error.message));
  for(const [width,height] of [[1366,768],[1024,720],[390,844],[320,640]]) {
   await page.setViewportSize({width,height});await page.goto(base);
-  await page.locator('.fold-stamp img').evaluate(async image=>{await image.decode();});
+  await page.locator('.hero-art img').evaluate(async image=>{await image.decode();});
   await page.evaluate(()=>document.fonts.ready);
   assert.equal(await page.locator('.marketing-site').getAttribute('data-theme'),'dark');
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,`${width}: horizontal overflow`);
-  for(const selector of ['#hero-heading','.desk-hero .desk-launch','.hero-footnote']) {
+  for(const selector of ['#hero-heading','.site-hero .hero-cta','.hero-footnote']) {
    const box=await page.locator(selector).boundingBox();
    assert.ok(box&&box.y>=0&&box.y+box.height<=height,`${width}: ${selector} must fit in first viewport`);
   }
-  assert.equal(await page.locator('.desk-hero .desk-launch').getAttribute('href'),'/app');
+  assert.equal(await page.locator('.site-hero .hero-cta').getAttribute('href'),'/app');
   if(process.env.TICK_TEST_SCREENSHOTS){fs.mkdirSync(process.env.TICK_TEST_SCREENSHOTS,{recursive:true});await page.screenshot({path:`${process.env.TICK_TEST_SCREENSHOTS}/hero-${width}.png`});}
  }
  assert.equal(await page.getByRole('link',{name:'Task-tick home'}).count(),1);

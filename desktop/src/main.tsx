@@ -13,10 +13,23 @@ const nativeReminderSettings = {
   get: () => invoke<boolean>("get_reminders"),
   set: (enabled: boolean) => invoke<void>("set_reminders", { enabled }),
 };
+const nativeUpdates = {
+  check: () => invoke<string | null>("check_update"),
+  install: () => invoke<void>("install_update"),
+};
+const shareSession = (
+  session: import("@supabase/supabase-js").Session | null,
+) =>
+  invoke<void>("set_search_session", {
+    account: session?.user.id ?? null,
+    token: session?.access_token ?? null,
+  });
 createRoot(document.getElementById("root")!).render(
   <Workspace
     storage={storage}
     desktop
     nativeReminderSettings={nativeReminderSettings}
+    onSession={shareSession}
+    nativeUpdates={nativeUpdates}
   />,
 );

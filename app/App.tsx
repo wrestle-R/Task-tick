@@ -1,4 +1,10 @@
-import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
+import React, {
+  createContext,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+} from 'react';
 import {
   Alert,
   Animated,
@@ -26,8 +32,24 @@ import type { Item, Kind, State, Fields } from '../packages/core/src/index';
 import { compareItems, planMove, syncStatus } from '../packages/core/src/index';
 import { themes, themeGeometry } from '../packages/core/src/theme';
 const TextTone = createContext<string>(themes.light.ink);
-const Text = (props: React.ComponentProps<typeof NativeText>) => { const color = useContext(TextTone); return <NativeText {...props} style={[{fontFamily: 'DMSans', color}, props.style]} />; };
-const TextInput = (props: React.ComponentProps<typeof NativeTextInput>) => { const color = useContext(TextTone); return <NativeTextInput {...props} style={[{fontFamily: 'DMSans', color}, props.style]} />; };
+const Text = (props: React.ComponentProps<typeof NativeText>) => {
+  const color = useContext(TextTone);
+  return (
+    <NativeText
+      {...props}
+      style={[{ fontFamily: 'DMSans', color }, props.style]}
+    />
+  );
+};
+const TextInput = (props: React.ComponentProps<typeof NativeTextInput>) => {
+  const color = useContext(TextTone);
+  return (
+    <NativeTextInput
+      {...props}
+      style={[{ fontFamily: 'DMSans', color }, props.style]}
+    />
+  );
+};
 type Snapshot = {
   state: State;
   account: string | null;
@@ -48,16 +70,21 @@ const blank: Snapshot = {
   preciseAlarms: false,
   online: false,
   lastSyncAt: 0,
-  syncError: "",
+  syncError: '',
   appearance: native?.appearance ?? 'system',
 };
 export default function App() {
-  return <SafeAreaProvider><TickApp /></SafeAreaProvider>;
+  return (
+    <SafeAreaProvider>
+      <TickApp />
+    </SafeAreaProvider>
+  );
 }
 function TickApp() {
   const systemDark = useColorScheme() === 'dark';
   const [snap, setSnap] = useState(blank);
-  const dark = snap.appearance === 'dark' || (snap.appearance === 'system' && systemDark);
+  const dark =
+    snap.appearance === 'dark' || (snap.appearance === 'system' && systemDark);
   const palette = themes[dark ? 'dark' : 'light'];
   const c = { ...palette, bg: palette.paper };
   const s = makeStyles(palette);
@@ -78,26 +105,58 @@ function TickApp() {
     [results, setResults] = useState<any[]>([]),
     [undo, setUndo] = useState<any>(null),
     [subtask, setSubtask] = useState('');
+  const [availableUpdate, setAvailableUpdate] = useState<any>(null);
+  const [installingUpdate, setInstallingUpdate] = useState(false);
+  useEffect(() => {
+    let live = true;
+    const check = async () => {
+      try {
+        const value = await native.checkUpdate();
+        if (live) setAvailableUpdate(value ? JSON.parse(value) : null);
+      } catch {}
+    };
+    void check();
+    const timer = setInterval(() => void check(), 30 * 60 * 1000);
+    return () => {
+      live = false;
+      clearInterval(timer);
+    };
+  }, []);
   const [completedOpen, setCompletedOpen] = useState(true);
   const [composing, setComposing] = useState(false);
   const searchGeneration = useRef(0);
   useEffect(() => {
     const generation = ++searchGeneration.current;
     setResults([]);
-    if(kind !== 'movie' || !composing || title.trim().length < 2 || !snap.account) return;
+    if (
+      kind !== 'movie' ||
+      !composing ||
+      title.trim().length < 2 ||
+      !snap.account
+    )
+      return;
     const account = snap.account;
     const timer = setTimeout(async () => {
       try {
         const value = JSON.parse(await native.search(title.trim()));
-        if(searchGeneration.current === generation && account === snap.account) setResults(value.results);
-      } catch(e) {if(searchGeneration.current === generation) setError((e as Error).message);}
+        if (searchGeneration.current === generation && account === snap.account)
+          setResults(value.results);
+      } catch (e) {
+        if (searchGeneration.current === generation)
+          setError((e as Error).message);
+      }
     }, 350);
-    return () => {clearTimeout(timer);searchGeneration.current++;};
+    return () => {
+      clearTimeout(timer);
+      searchGeneration.current++;
+    };
   }, [title, kind, composing, snap.account]);
   const pendingLink = useRef<string | null>(null);
   async function refresh(lifecycle = false) {
     try {
-      const value = JSON.parse(await (lifecycle ? native.resume() : native.snapshot()));
+      const value = JSON.parse(
+        await (lifecycle ? native.resume() : native.snapshot()),
+      );
       setSnap(value);
       const u = value.state.undo;
       setUndo(u && u.until > Date.now() ? u : null);
@@ -107,9 +166,11 @@ function TickApp() {
         setView('active');
         setSettings(false);
         const id = link.match(/[?&]item=([^&]+)/)?.[1];
-        setSelected(id
-          ? value.state.items.find((i: Item) => i.id === id) ?? null
-          : null);
+        setSelected(
+          id
+            ? (value.state.items.find((i: Item) => i.id === id) ?? null)
+            : null,
+        );
         pendingLink.current = null;
       }
     } catch (e) {
@@ -118,9 +179,13 @@ function TickApp() {
   }
   async function sync() {
     setSyncing(true);
-    try {setSnap(JSON.parse(await native.sync()));}
-    catch {setSnap(JSON.parse(await native.snapshot()));}
-    finally {setSyncing(false);}
+    try {
+      setSnap(JSON.parse(await native.sync()));
+    } catch {
+      setSnap(JSON.parse(await native.snapshot()));
+    } finally {
+      setSyncing(false);
+    }
   }
   useEffect(() => {
     if (!native) {
@@ -167,7 +232,15 @@ function TickApp() {
   ) {
     try {
       const value = JSON.parse(
-        await native.mutate(JSON.stringify({ kind: k, id, action, patch, expectedAccount: snap.account })),
+        await native.mutate(
+          JSON.stringify({
+            kind: k,
+            id,
+            action,
+            patch,
+            expectedAccount: snap.account,
+          }),
+        ),
       );
       setSnap(value);
       setUndo(value.state.undo ?? null);
@@ -190,7 +263,10 @@ function TickApp() {
           i.title.toLowerCase() === name.toLowerCase(),
       );
     const save = async () => {
-      if (await mutate(kind, { title: name })) {setTitle('');setComposing(false);}
+      if (await mutate(kind, { title: name })) {
+        setTitle(current => (current.trim() === name ? '' : current));
+        setComposing(false);
+      }
     };
     if (exists)
       Alert.alert(
@@ -287,13 +363,36 @@ function TickApp() {
     setComposing(false);
   }
   const all = snap.state.items.filter(i => i.kind === kind);
-  const activeItems = all.filter(i => !i.deletedAt && !i.done).sort(compareItems);
-  const completedItems = all.filter(i => !i.deletedAt && i.done).sort((a,b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
-  const items = view === 'trash'
-    ? snap.state.items.filter(i => i.deletedAt && Date.parse(i.deletedAt) > Date.now() - 7 * 86400000).sort((a,b) => Date.parse(b.deletedAt!) - Date.parse(a.deletedAt!))
-    : activeItems;
-  const sections = view === 'trash' ? [{title:'Deleted recently', data:items}]
-    : [{title:'', data:activeItems}, ...(completedItems.length ? [{title:kind === 'todo' ? 'Completed' : 'Watched', data:completedOpen ? completedItems : []}] : [])];
+  const activeItems = all
+    .filter(i => !i.deletedAt && !i.done)
+    .sort(compareItems);
+  const completedItems = all
+    .filter(i => !i.deletedAt && i.done)
+    .sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
+  const items =
+    view === 'trash'
+      ? snap.state.items
+          .filter(
+            i =>
+              i.deletedAt &&
+              Date.parse(i.deletedAt) > Date.now() - 7 * 86400000,
+          )
+          .sort((a, b) => Date.parse(b.deletedAt!) - Date.parse(a.deletedAt!))
+      : activeItems;
+  const sections =
+    view === 'trash'
+      ? [{ title: 'Deleted recently', data: items }]
+      : [
+          { title: '', data: activeItems },
+          ...(completedItems.length
+            ? [
+                {
+                  title: kind === 'todo' ? 'Completed' : 'Watched',
+                  data: completedOpen ? completedItems : [],
+                },
+              ]
+            : []),
+        ];
   function reorder(index: number, delta: number) {
     if (view !== 'active') return;
     const target = Math.max(
@@ -303,13 +402,23 @@ function TickApp() {
     if (index === target) return;
     const reordered = items.filter((_, i) => i !== index);
     reordered.splice(target, 0, items[index]);
-    const moves = planMove(items, items[index].id, reordered[target + 1]?.id ?? null);
+    const moves = planMove(
+      items,
+      items[index].id,
+      reordered[target + 1]?.id ?? null,
+    );
     void (async () => {
       try {
-        const value = JSON.parse(await native.reorder(JSON.stringify({kind, moves, expectedAccount: snap.account})));
+        const value = JSON.parse(
+          await native.reorder(
+            JSON.stringify({ kind, moves, expectedAccount: snap.account }),
+          ),
+        );
         setSnap(value);
         setError('');
-      } catch (e) { setError((e as Error).message); }
+      } catch (e) {
+        setError((e as Error).message);
+      }
     })();
   }
   const label = (text: string) => (
@@ -318,496 +427,701 @@ function TickApp() {
   const inputStyle = [s.input, { borderColor: c.line, color: c.ink }];
   return (
     <TextTone.Provider value={c.ink}>
-    <SafeAreaView style={[s.root, { backgroundColor: c.bg }]}>
-      <StatusBar barStyle={dark ? 'light-content' : 'dark-content'} />
-      <View style={s.header}>
-        <Text style={[s.brand, { color: c.ink }]}>
-          <Text style={s.logo}>✓</Text> Task-tick
-        </Text>
-        <Pressable
-          accessibilityLabel="Settings"
-          onPress={() => setSettings(true)}
-        >
-          <Text style={{ fontSize: 28, color: c.muted }}>☷</Text>
-        </Pressable>
-      </View>
-      {!snap.account ? (
-        <ScrollView contentContainerStyle={s.auth}>
-          <Text style={[s.eyebrow, { color: c.muted }]}>
-            A LITTLE LESS ON YOUR MIND
+      <SafeAreaView style={[s.root, { backgroundColor: c.bg }]}>
+        <StatusBar barStyle={dark ? 'light-content' : 'dark-content'} />
+        <View style={s.header}>
+          <Text style={[s.brand, { color: c.ink }]}>
+            <Text style={s.logo}>✓</Text> Task-tick
           </Text>
-          <Text style={[s.authTitle, { color: c.ink }]}>
-            A clearer head.{'\n'}
-            <Text style={{ color: '#8D9F67' }}>A shorter list.</Text>
-          </Text>
-          <Text style={[s.description, { color: c.muted }]}>
-            Your todos. Your watchlist. A little space for both.
-          </Text>
-          {label('EMAIL')}
-          <TextInput
-            style={inputStyle}
-            value={email}
-            onChangeText={setEmail}
-            autoCapitalize="none"
-            keyboardType="email-address"
-            placeholder="you@example.com"
-            placeholderTextColor={c.muted}
-          />
-          {authMode !== 'reset' && (
-            <>
-              {label('PASSWORD')}
-              <TextInput
-                style={inputStyle}
-                secureTextEntry
-                value={password}
-                onChangeText={setPassword}
-                placeholder={authMode === 'login' ? 'Your password' : 'At least 8 characters'}
-                placeholderTextColor={c.muted}
-              />
-            </>
-          )}
-          <Pressable
-            disabled={
-              busy ||
-              !email ||
-              (authMode === 'login' ? password.length === 0 : authMode !== 'reset' && password.length < 8)
-            }
-            style={s.primary}
-            onPress={() => void auth()}
-          >
-            <Text style={s.primaryText}>
-              {busy
-                ? 'One moment…'
-                : authMode === 'signup'
-                  ? 'Create account'
-                  : authMode === 'reset'
-                    ? 'Send reset link'
-                    : 'Sign in'}{' '}
-              ↗
-            </Text>
-          </Pressable>
-          <Pressable
-            onPress={() =>
-              setAuthMode(authMode === 'signup' ? 'login' : 'signup')
-            }
-          >
-            <Text style={[s.link, { color: c.muted }]}>
-              {authMode === 'signup'
-                ? 'Already have an account? Sign in'
-                : 'New here? Create an account'}
-            </Text>
-          </Pressable>
-          <Pressable onPress={() => setAuthMode('reset')}>
-            <Text style={[s.link, { color: c.muted }]}>Forgot password?</Text>
-          </Pressable>
-        </ScrollView>
-      ) : (
-        <>
-          <View style={s.modes}>
-            {(['todo', 'movie', 'trash'] as const).map(tab => {
-              const chosen = tab === 'trash' ? view === 'trash' : kind === tab && view !== 'trash';
-              return <Pressable key={tab} accessibilityRole="tab" accessibilityState={{selected:chosen}}
-                style={[s.mode, chosen && s.modeActive]}
-                onPress={() => {if(tab !== 'trash') setKind(tab);setView(tab === 'trash' ? 'trash' : 'active');setResults([]);setComposing(false);setTitle('');}}>
-                <Text style={{color:chosen ? c.ink : c.muted, fontSize:14, fontWeight:chosen ? '700' : '500'}}>{tab === 'todo' ? 'Todos' : tab === 'movie' ? 'Watchlist' : 'Trash'}</Text>
-              </Pressable>;
-            })}
-          </View>
-          {view === 'trash' && <Text style={[s.description,{paddingHorizontal:22,marginBottom:14}]}>Todos and titles stay here for seven days.</Text>}
-          {view === 'active' && composing && (
-            <View
-              style={[
-                s.capture,
-                { backgroundColor: c.surface, borderColor: c.line },
-              ]}
-            >
-              <Text style={{ color: c.muted, fontSize: 25 }}>＋</Text>
-              <TextInput
-                style={[s.captureInput, { color: c.ink }]}
-                placeholder={
-                  kind === 'todo'
-                    ? 'What’s on your mind?'
-                    : 'Add a movie or TV title…'
+          {availableUpdate && (
+            <Pressable
+              disabled={installingUpdate}
+              accessibilityRole="button"
+              accessibilityLabel="Install update"
+              onPress={async () => {
+                setInstallingUpdate(true);
+                try {
+                  Alert.alert('Task-tick update', await native.installUpdate());
+                } catch (e) {
+                  setError((e as Error).message);
+                } finally {
+                  setInstallingUpdate(false);
                 }
-                placeholderTextColor={c.muted}
-                value={title}
-                onChangeText={setTitle}
-                onSubmitEditing={() => void add()}
-              />
-              <Pressable
-                accessibilityLabel="Add item"
-                onPress={() => void add()}
-              >
-                <Text style={s.addButton}>Add</Text>
-              </Pressable>
-            </View>
-          )}
-          {results.length > 0 ? (
-            <FlatList
-              data={results.filter(
-                r => r.media_type === 'movie' || r.media_type === 'tv',
-              )}
-              keyExtractor={i => `${i.media_type}:${i.id}`}
-              renderItem={({ item }) => (
-                <Pressable
-                  onPress={() => void addResult(item)}
-                  style={[s.result, { borderColor: c.line }]}
-                >
-                  {item.poster_path && <Image source={{uri:`https://image.tmdb.org/t/p/w92${item.poster_path}`}} style={s.poster}/>}
-                  <Text style={[s.itemTitle, { color: c.ink }]}>
-                    {item.title ?? item.name}
-                  </Text>
-                  <Text style={{ color: c.muted, fontSize: 12 }}>
-                    {item.media_type === 'tv' ? 'TV series' : 'Film'} · Add ＋
-                  </Text>
-                </Pressable>
-              )}
-            />
-          ) : view === 'history' ? (
-            <FlatList
-              data={snap.state.history
-                .filter(
-                  h =>
-                    h.item.kind === kind &&
-                    Date.parse(h.at) > Date.now() - 7 * 86400000,
-                )
-                .slice()
-                .reverse()}
-              keyExtractor={i => i.id}
-              renderItem={({ item: h }) => (
-                <View style={[s.result, { borderColor: c.line }]}>
-                  <Text style={[s.itemTitle, { color: c.ink }]}>
-                    {h.item.title}
-                  </Text>
-                  <Text style={{ color: c.muted, fontSize: 11 }}>
-                    {new Date(h.at).toLocaleString()}
-                  </Text>
-                  <Pressable
-                    onPress={() =>
-                      void mutate(
-                        h.item.kind,
-                        {
-                          title: h.item.title,
-                          notes: h.item.notes,
-                          done: h.item.done,
-                          priority: h.item.priority,
-                          dueAt: h.item.dueAt,
-                          rating: h.item.rating,
-                        },
-                        h.item.id,
-                        'restore',
-                      )
-                    }
-                  >
-                    <Text style={s.link}>Recover ↗</Text>
-                  </Pressable>
-                </View>
-              )}
-            />
-          ) : (
-            <SectionList
-              sections={sections}
-              stickySectionHeadersEnabled={false}
-              renderSectionHeader={({section}) => section.title ? <Pressable style={s.completedHeader} onPress={() => setCompletedOpen(!completedOpen)} accessibilityRole="button" accessibilityState={{expanded:completedOpen}}><Text style={{color:c.muted,fontWeight:'600'}}>{section.title}</Text><Text style={{color:c.muted,fontSize:12}}>{view === 'trash' ? items.length : completedItems.length} {completedOpen ? '⌄' : '›'}</Text></Pressable> : null}
-              contentContainerStyle={{
-                paddingHorizontal: 16,
-                paddingTop: 12,
-                paddingBottom: 90,
-                flexGrow: 1,
               }}
-              keyExtractor={i => i.id}
-              ListEmptyComponent={
-                <View style={s.empty}>
-                  <Text style={{ fontSize: 38, color: '#8D9F67' }}>✓</Text>
-                  <Text style={[s.emptyTitle, { color: c.ink }]}>
-                    A little breathing room.
-                  </Text>
-                  <Text style={[s.description, { color: c.muted }]}>
-                    Your list is ready when you are.
-                  </Text>
-                </View>
-              }
-              renderItem={({ item, index }) => (
-                <TaskRow
-                  colors={c}
-                  item={item}
-                  trash={view === 'trash'}
-                  onToggle={() => {
-                    if (view === 'trash')
-                      void mutate(item.kind, {}, item.id, 'restore');
-                    else void mutate(item.kind, { done: !item.done }, item.id);
-                  }}
-                  onOpen={() => setSelected(item)}
-                  onMove={delta => reorder(index, delta)}
-                  draggable={view === 'active' && !item.done}
-                />
-              )}
-            />
-          )}
-          {view === 'active' && <Pressable accessibilityRole="button" accessibilityLabel={composing ? 'Close quick add' : 'Add item'} onPress={() => {setComposing(!composing);setResults([]);}} style={s.fab}><Text style={{fontSize:32,lineHeight:36,color:c.accentInk}}>{composing ? '×' : '+'}</Text></Pressable>}
-          <View style={[s.footer, { borderColor: c.line }]}>
-            <Text style={{ color: c.muted, fontSize: 10 }}>
-              ● Saved on this device
-            </Text>
-            <Pressable onPress={() => void sync()}>
-              <Text style={{ color: c.muted, fontSize: 10 }}>
-                {syncStatus({online:snap.online,pending:snap.state.outbox.length,syncing,lastSyncAt:snap.lastSyncAt,error:snap.syncError})} ↗
-              </Text>
-            </Pressable>
-          </View>
-        </>
-      )}
-      {(error || snap.syncError) !== '' && (
-        <Pressable style={s.error} onPress={() => setError('')}>
-          <Text style={{ color: c.error, fontSize: 12, lineHeight: 18 }}>
-            {error || snap.syncError} ×
-          </Text>
-        </Pressable>
-      )}
-      {undo && (
-        <View style={s.undo}>
-          <Text style={{ color: '#F4F7EB' }}>Taken care of.</Text>
-          <Pressable onPress={() => void mutate(kind, {}, undefined, 'undo')}>
-            <Text style={{ color: '#D8ED96', fontWeight: '600' }}>Undo</Text>
-          </Pressable>
-        </View>
-      )}
-      <Modal
-        visible={selected !== null}
-        animationType="slide"
-        onRequestClose={() => setSelected(null)}
-      >
-        <SafeAreaProvider>
-        <SafeAreaView style={[s.root, { backgroundColor: c.bg }]}>
-          <View style={s.sheetHeader}>
-            <Text style={[s.eyebrow, { color: c.muted }]}>A LITTLE DETAIL</Text>
-            <Pressable accessibilityRole="button" accessibilityLabel="Close item editor" hitSlop={12} style={{ minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' }} onPress={() => setSelected(null)}>
-              <Text style={{ fontSize: 24, color: c.ink }}>×</Text>
-            </Pressable>
-          </View>
-          {selected && (
-            <ScrollView contentContainerStyle={s.sheet}>
-              {label('TITLE')}
-              <TextInput
-                style={[...inputStyle, { fontSize: 22 }]}
-                value={selected.title}
-                onChangeText={t => setSelected({ ...selected, title: t })}
-                onEndEditing={() =>
-                  selected.title.trim() &&
-                  void patch({ title: selected.title.trim() })
-                }
-              />
-              <Pressable
-                style={s.primary}
-                onPress={() => void patch({ done: !selected.done })}
-              >
-                <Text style={s.primaryText}>
-                  {selected.done ? 'Mark unfinished' : 'Mark as done'} ✓
-                </Text>
-              </Pressable>
-              {selected.kind === 'todo' ? (
-                <>
-                  {label('NOTES')}
-                  <TextInput
-                    multiline
-                    style={[
-                      ...inputStyle,
-                      { minHeight: 130, textAlignVertical: 'top' },
-                    ]}
-                    value={selected.notes}
-                    onChangeText={t => setSelected({ ...selected, notes: t })}
-                    onEndEditing={() => void patch({ notes: selected.notes })}
-                  />
-                  {label('DUE DATE & REMINDER')}
-                  <Pressable
-                    style={[s.input, { borderColor: c.line }]}
-                    onPress={async () => {
-                      try {
-                        const due = await native.pickDueDate();
-                        if (due) void patch({ dueAt: due });
-                      } catch (e) {
-                        setError((e as Error).message);
-                      }
-                    }}
-                  >
-                    <Text style={{ color: c.ink }}>
-                      {selected.dueAt
-                        ? new Date(selected.dueAt).toLocaleString()
-                        : 'Choose a date & time ↗'}
-                    </Text>
-                  </Pressable>
-                  {selected.dueAt && (
-                    <Pressable onPress={() => void patch({ dueAt: null })}>
-                      <Text style={s.link}>Remove reminder</Text>
-                    </Pressable>
-                  )}
-                  {label('PRIORITY')}
-                  <View style={s.modes}>
-                    {['None', 'Low', 'Medium', 'High'].map((v, n) => (
-                      <Pressable
-                        key={v}
-                        style={[
-                          s.mode,
-                          selected.priority === n && s.modeActive,
-                        ]}
-                        onPress={() => void patch({ priority: n })}
-                      >
-                        <Text
-                          style={{
-                            color:
-                              selected.priority === n ? c.accentInk : c.muted,
-                            fontSize: 12,
-                          }}
-                        >
-                          {v}
-                        </Text>
-                      </Pressable>
-                    ))}
-                  </View>
-                  {!selected.parentId && (
-                    <>
-                      {label('SUBTASKS')}
-                      {snap.state.items
-                        .filter(i => i.parentId === selected.id && !i.deletedAt)
-                        .map(i => (
-                          <Pressable
-                            key={i.id}
-                            style={s.subtask}
-                            onPress={() =>
-                              void mutate('todo', { done: !i.done }, i.id)
-                            }
-                          >
-                            <Text style={{ color: c.ink }}>
-                              {i.done ? '✓' : '○'} {i.title}
-                            </Text>
-                          </Pressable>
-                        ))}
-                      <TextInput
-                        style={inputStyle}
-                        placeholder="One smaller step…"
-                        placeholderTextColor={c.muted}
-                        value={subtask}
-                        onChangeText={setSubtask}
-                        onSubmitEditing={async () => {
-                          if (
-                            subtask.trim() &&
-                            (await mutate('todo', {
-                              title: subtask.trim(),
-                              parentId: selected.id,
-                            }))
-                          )
-                            setSubtask('');
-                        }}
-                      />
-                    </>
-                  )}
-                </>
-              ) : (
-                <>
-                  {label('YOUR RATING')}
-                  <View style={s.ratingOptions}>
-                    {[null, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5].map(n => (
-                      <Pressable
-                        key={String(n)}
-                        style={[s.mode, selected.rating === n && s.modeActive]}
-                        onPress={() => void patch({ rating: n })}
-                      >
-                        <Text style={{ color: c.ink }}>
-                          {n ?? 'Unrated'}
-                          {n ? ' ★' : ''}
-                        </Text>
-                      </Pressable>
-                    ))}
-                  </View>
-                </>
-              )}
-              <Pressable
-                onPress={async () => {
-                  await mutate(selected.kind, {}, selected.id, 'delete');
-                  setSelected(null);
+            >
+              <Text
+                style={{
+                  fontSize: 12,
+                  color: c.accentInk,
+                  backgroundColor: c.accent,
+                  padding: 9,
+                  borderRadius: 8,
                 }}
               >
-                <Text style={{ color: '#A7675B', marginTop: 36, fontSize: 13 }}>
-                  Move to trash
-                </Text>
-              </Pressable>
-            </ScrollView>
-          )}
-        </SafeAreaView>
-        </SafeAreaProvider>
-      </Modal>
-      <Modal
-        visible={settings}
-        animationType="slide"
-        onRequestClose={() => setSettings(false)}
-      >
-        <SafeAreaProvider>
-        <SafeAreaView style={[s.root, { backgroundColor: c.bg }]}>
-          <View style={s.sheetHeader}>
-            <Text style={[s.eyebrow, { color: c.muted }]}>MAKE IT YOURS</Text>
-            <Pressable accessibilityRole="button" accessibilityLabel="Close settings" hitSlop={12} style={{ minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' }} onPress={() => setSettings(false)}>
-              <Text style={{ fontSize: 24, color: c.ink }}>×</Text>
-            </Pressable>
-          </View>
-          <ScrollView contentContainerStyle={s.sheet}>
-            <Text style={[s.title, { color: c.ink }]}>Your little space.</Text>
-            <Text style={[s.description, { color: c.muted }]}>
-              {snap.email ?? 'Sign in to keep everything together.'}
-            </Text>
-            {label('APPEARANCE')}
-            <View accessibilityRole="radiogroup" style={{ flexDirection: 'row', gap: 10, marginBottom: 26 }}>
-              {(['system', 'light', 'dark'] as const).map(mode => (
-                <Pressable key={mode} accessibilityRole="radio" accessibilityLabel={`${mode[0].toUpperCase() + mode.slice(1)} appearance`} accessibilityState={{ checked: snap.appearance === mode }}
-                  style={{ paddingVertical: 13, paddingHorizontal: 18, borderRadius: themeGeometry.controlRadius, backgroundColor: snap.appearance === mode ? c.accent : c.surface, borderWidth: 1, borderColor: c.line }}
-                  onPress={async () => {
-                    try { setSnap(JSON.parse(await native.setAppearance(mode))); setError(''); }
-                    catch (e) { setError((e as Error).message); }
-                  }}>
-                  <Text style={{ color: snap.appearance === mode ? c.accentInk : c.ink }}>{mode[0].toUpperCase() + mode.slice(1)}</Text>
-                </Pressable>
-              ))}
-            </View>
-            {snap.account && <Pressable onPress={() => {setView('history');setSettings(false);}}><Text style={[s.link,{color:c.ink,marginBottom:20}]}>Edit history · last 7 days ↗</Text></Pressable>}
-            {label('REMINDER HEALTH')}
-            <Text style={[s.description, { color: c.muted }]}>
-              {snap.preciseAlarms
-                ? 'Precise alarm access is available.'
-                : 'Reminders can be delayed without precise alarm access. Due tasks remain in your list.'}
-            </Text>
-            <Pressable
-              style={s.primary}
-              onPress={() => native.requestExactAlarms()}
-            >
-              <Text style={s.primaryText}>Alarm permission settings ↗</Text>
-            </Pressable>
-            <Text style={[s.description, { color: c.muted, marginTop: 22 }]}>
-              Edit history and trash last seven days. Offline changes stay until
-              synced. Force-stopping the app can pause widgets and reminders
-              until you open it again.
-            </Text>
-            <Pressable
-              onPress={() =>
-                Linking.openURL(
-                  'https://github.com/wrestle-R/Task-tick/releases',
-                )
-              }
-            >
-              <Text style={[s.link, { color: c.ink, marginTop: 32 }]}>
-                Downloads & releases ↗
+                {installingUpdate
+                  ? 'Downloading…'
+                  : `Update ${availableUpdate.version}`}
               </Text>
             </Pressable>
-            {snap.account && (
-              <Pressable onPress={() => void logout()}>
-                <Text style={[s.link, { color: c.error, marginTop: 35 }]}>
-                  Sign out
+          )}
+          <Pressable
+            accessibilityLabel="Settings"
+            onPress={() => setSettings(true)}
+          >
+            <Text style={{ fontSize: 28, color: c.muted }}>☷</Text>
+          </Pressable>
+        </View>
+        {!snap.account ? (
+          <ScrollView contentContainerStyle={s.auth}>
+            <Text style={[s.eyebrow, { color: c.muted }]}>
+              A LITTLE LESS ON YOUR MIND
+            </Text>
+            <Text style={[s.authTitle, { color: c.ink }]}>
+              A clearer head.{'\n'}
+              <Text style={{ color: '#8D9F67' }}>A shorter list.</Text>
+            </Text>
+            <Text style={[s.description, { color: c.muted }]}>
+              Your todos. Your watchlist. A little space for both.
+            </Text>
+            {label('EMAIL')}
+            <TextInput
+              style={inputStyle}
+              value={email}
+              onChangeText={setEmail}
+              autoCapitalize="none"
+              keyboardType="email-address"
+              placeholder="you@example.com"
+              placeholderTextColor={c.muted}
+            />
+            {authMode !== 'reset' && (
+              <>
+                {label('PASSWORD')}
+                <TextInput
+                  style={inputStyle}
+                  secureTextEntry
+                  value={password}
+                  onChangeText={setPassword}
+                  placeholder={
+                    authMode === 'login'
+                      ? 'Your password'
+                      : 'At least 8 characters'
+                  }
+                  placeholderTextColor={c.muted}
+                />
+              </>
+            )}
+            <Pressable
+              disabled={
+                busy ||
+                !email ||
+                (authMode === 'login'
+                  ? password.length === 0
+                  : authMode !== 'reset' && password.length < 8)
+              }
+              style={s.primary}
+              onPress={() => void auth()}
+            >
+              <Text style={s.primaryText}>
+                {busy
+                  ? 'One moment…'
+                  : authMode === 'signup'
+                    ? 'Create account'
+                    : authMode === 'reset'
+                      ? 'Send reset link'
+                      : 'Sign in'}{' '}
+                ↗
+              </Text>
+            </Pressable>
+            <Pressable
+              onPress={() =>
+                setAuthMode(authMode === 'signup' ? 'login' : 'signup')
+              }
+            >
+              <Text style={[s.link, { color: c.muted }]}>
+                {authMode === 'signup'
+                  ? 'Already have an account? Sign in'
+                  : 'New here? Create an account'}
+              </Text>
+            </Pressable>
+            <Pressable onPress={() => setAuthMode('reset')}>
+              <Text style={[s.link, { color: c.muted }]}>Forgot password?</Text>
+            </Pressable>
+          </ScrollView>
+        ) : (
+          <>
+            <View style={s.modes}>
+              {(['todo', 'movie', 'trash'] as const).map(tab => {
+                const chosen =
+                  tab === 'trash'
+                    ? view === 'trash'
+                    : kind === tab && view !== 'trash';
+                return (
+                  <Pressable
+                    key={tab}
+                    accessibilityRole="tab"
+                    accessibilityState={{ selected: chosen }}
+                    style={[s.mode, chosen && s.modeActive]}
+                    onPress={() => {
+                      if (tab !== 'trash') setKind(tab);
+                      setView(tab === 'trash' ? 'trash' : 'active');
+                      setResults([]);
+                      setComposing(false);
+                      setTitle('');
+                    }}
+                  >
+                    <Text
+                      style={{
+                        color: chosen ? c.ink : c.muted,
+                        fontSize: 14,
+                        fontWeight: chosen ? '700' : '500',
+                      }}
+                    >
+                      {tab === 'todo'
+                        ? 'Todos'
+                        : tab === 'movie'
+                          ? 'Watchlist'
+                          : 'Trash'}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+            {view === 'trash' && (
+              <Text
+                style={[
+                  s.description,
+                  { paddingHorizontal: 22, marginBottom: 14 },
+                ]}
+              >
+                Todos and titles stay here for seven days.
+              </Text>
+            )}
+            {view === 'active' && composing && (
+              <View
+                style={[
+                  s.capture,
+                  { backgroundColor: c.surface, borderColor: c.line },
+                ]}
+              >
+                <Text style={{ color: c.muted, fontSize: 25 }}>＋</Text>
+                <TextInput
+                  style={[s.captureInput, { color: c.ink }]}
+                  placeholder={
+                    kind === 'todo'
+                      ? 'What’s on your mind?'
+                      : 'Add a movie or TV title…'
+                  }
+                  placeholderTextColor={c.muted}
+                  value={title}
+                  onChangeText={setTitle}
+                  onSubmitEditing={() => void add()}
+                />
+                <Pressable
+                  accessibilityLabel="Add item"
+                  onPress={() => void add()}
+                >
+                  <Text style={s.addButton}>Add</Text>
+                </Pressable>
+              </View>
+            )}
+            {results.length > 0 ? (
+              <FlatList
+                data={results.filter(
+                  r => r.media_type === 'movie' || r.media_type === 'tv',
+                )}
+                keyExtractor={i => `${i.media_type}:${i.id}`}
+                renderItem={({ item }) => (
+                  <Pressable
+                    onPress={() => void addResult(item)}
+                    style={[s.result, { borderColor: c.line }]}
+                  >
+                    {item.poster_path && (
+                      <Image
+                        source={{
+                          uri: `https://image.tmdb.org/t/p/w92${item.poster_path}`,
+                        }}
+                        style={s.poster}
+                      />
+                    )}
+                    <Text style={[s.itemTitle, { color: c.ink }]}>
+                      {item.title ?? item.name}
+                    </Text>
+                    <Text style={{ color: c.muted, fontSize: 12 }}>
+                      {item.media_type === 'tv' ? 'TV series' : 'Film'} · Add ＋
+                    </Text>
+                  </Pressable>
+                )}
+              />
+            ) : view === 'history' ? (
+              <FlatList
+                data={snap.state.history
+                  .filter(
+                    h =>
+                      h.item.kind === kind &&
+                      Date.parse(h.at) > Date.now() - 7 * 86400000,
+                  )
+                  .slice()
+                  .reverse()}
+                keyExtractor={i => i.id}
+                renderItem={({ item: h }) => (
+                  <View style={[s.result, { borderColor: c.line }]}>
+                    <Text style={[s.itemTitle, { color: c.ink }]}>
+                      {h.item.title}
+                    </Text>
+                    <Text style={{ color: c.muted, fontSize: 11 }}>
+                      {new Date(h.at).toLocaleString()}
+                    </Text>
+                    <Pressable
+                      onPress={() =>
+                        void mutate(
+                          h.item.kind,
+                          {
+                            title: h.item.title,
+                            notes: h.item.notes,
+                            done: h.item.done,
+                            priority: h.item.priority,
+                            dueAt: h.item.dueAt,
+                            rating: h.item.rating,
+                          },
+                          h.item.id,
+                          'restore',
+                        )
+                      }
+                    >
+                      <Text style={s.link}>Recover ↗</Text>
+                    </Pressable>
+                  </View>
+                )}
+              />
+            ) : (
+              <SectionList
+                sections={sections}
+                stickySectionHeadersEnabled={false}
+                renderSectionHeader={({ section }) =>
+                  section.title ? (
+                    <Pressable
+                      style={s.completedHeader}
+                      onPress={() => setCompletedOpen(!completedOpen)}
+                      accessibilityRole="button"
+                      accessibilityState={{ expanded: completedOpen }}
+                    >
+                      <Text style={{ color: c.muted, fontWeight: '600' }}>
+                        {section.title}
+                      </Text>
+                      <Text style={{ color: c.muted, fontSize: 12 }}>
+                        {view === 'trash'
+                          ? items.length
+                          : completedItems.length}{' '}
+                        {completedOpen ? '⌄' : '›'}
+                      </Text>
+                    </Pressable>
+                  ) : null
+                }
+                contentContainerStyle={{
+                  paddingHorizontal: 16,
+                  paddingTop: 12,
+                  paddingBottom: 90,
+                  flexGrow: 1,
+                }}
+                keyExtractor={i => i.id}
+                ListEmptyComponent={
+                  <View style={s.empty}>
+                    <Text style={{ fontSize: 38, color: '#8D9F67' }}>✓</Text>
+                    <Text style={[s.emptyTitle, { color: c.ink }]}>
+                      A little breathing room.
+                    </Text>
+                    <Text style={[s.description, { color: c.muted }]}>
+                      Your list is ready when you are.
+                    </Text>
+                  </View>
+                }
+                renderItem={({ item, index }) => (
+                  <TaskRow
+                    colors={c}
+                    item={item}
+                    trash={view === 'trash'}
+                    onToggle={() => {
+                      if (view === 'trash')
+                        void mutate(item.kind, {}, item.id, 'restore');
+                      else
+                        void mutate(item.kind, { done: !item.done }, item.id);
+                    }}
+                    onOpen={() => setSelected(item)}
+                    onMove={delta => reorder(index, delta)}
+                    draggable={view === 'active' && !item.done}
+                  />
+                )}
+              />
+            )}
+            {view === 'active' && (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={composing ? 'Close quick add' : 'Add item'}
+                onPress={() => {
+                  setComposing(!composing);
+                  setResults([]);
+                }}
+                style={s.fab}
+              >
+                <Text
+                  style={{ fontSize: 32, lineHeight: 36, color: c.accentInk }}
+                >
+                  {composing ? '×' : '+'}
                 </Text>
               </Pressable>
             )}
-          </ScrollView>
-        </SafeAreaView>
-        </SafeAreaProvider>
-      </Modal>
-    </SafeAreaView>
+            <View style={[s.footer, { borderColor: c.line }]}>
+              <Text style={{ color: c.muted, fontSize: 10 }}>
+                ● Saved on this device
+              </Text>
+              <Pressable onPress={() => void sync()}>
+                <Text style={{ color: c.muted, fontSize: 10 }}>
+                  {syncStatus({
+                    online: snap.online,
+                    pending: snap.state.outbox.length,
+                    syncing,
+                    lastSyncAt: snap.lastSyncAt,
+                    error: snap.syncError,
+                  })}{' '}
+                  ↗
+                </Text>
+              </Pressable>
+            </View>
+          </>
+        )}
+        {(error || snap.syncError) !== '' && (
+          <Pressable style={s.error} onPress={() => setError('')}>
+            <Text style={{ color: c.error, fontSize: 12, lineHeight: 18 }}>
+              {error || snap.syncError} ×
+            </Text>
+          </Pressable>
+        )}
+        {undo && (
+          <View style={s.undo}>
+            <Text style={{ color: '#F4F7EB' }}>Taken care of.</Text>
+            <Pressable onPress={() => void mutate(kind, {}, undefined, 'undo')}>
+              <Text style={{ color: '#D8ED96', fontWeight: '600' }}>Undo</Text>
+            </Pressable>
+          </View>
+        )}
+        <Modal
+          visible={selected !== null}
+          animationType="slide"
+          onRequestClose={() => setSelected(null)}
+        >
+          <SafeAreaProvider>
+            <SafeAreaView style={[s.root, { backgroundColor: c.bg }]}>
+              <View style={s.sheetHeader}>
+                <Text style={[s.eyebrow, { color: c.muted }]}>
+                  A LITTLE DETAIL
+                </Text>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Close item editor"
+                  hitSlop={12}
+                  style={{
+                    minWidth: 44,
+                    minHeight: 44,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                  onPress={() => setSelected(null)}
+                >
+                  <Text style={{ fontSize: 24, color: c.ink }}>×</Text>
+                </Pressable>
+              </View>
+              {selected && (
+                <ScrollView contentContainerStyle={s.sheet}>
+                  {label('TITLE')}
+                  <TextInput
+                    style={[...inputStyle, { fontSize: 22 }]}
+                    value={selected.title}
+                    onChangeText={t => setSelected({ ...selected, title: t })}
+                    onEndEditing={() =>
+                      selected.title.trim() &&
+                      void patch({ title: selected.title.trim() })
+                    }
+                  />
+                  <Pressable
+                    style={s.primary}
+                    onPress={() => void patch({ done: !selected.done })}
+                  >
+                    <Text style={s.primaryText}>
+                      {selected.done ? 'Mark unfinished' : 'Mark as done'} ✓
+                    </Text>
+                  </Pressable>
+                  {selected.kind === 'todo' ? (
+                    <>
+                      {label('NOTES')}
+                      <TextInput
+                        multiline
+                        style={[
+                          ...inputStyle,
+                          { minHeight: 130, textAlignVertical: 'top' },
+                        ]}
+                        value={selected.notes}
+                        onChangeText={t =>
+                          setSelected({ ...selected, notes: t })
+                        }
+                        onEndEditing={() =>
+                          void patch({ notes: selected.notes })
+                        }
+                      />
+                      {label('DUE DATE & REMINDER')}
+                      <Pressable
+                        style={[s.input, { borderColor: c.line }]}
+                        onPress={async () => {
+                          try {
+                            const due = await native.pickDueDate();
+                            if (due) void patch({ dueAt: due });
+                          } catch (e) {
+                            setError((e as Error).message);
+                          }
+                        }}
+                      >
+                        <Text style={{ color: c.ink }}>
+                          {selected.dueAt
+                            ? new Date(selected.dueAt).toLocaleString()
+                            : 'Choose a date & time ↗'}
+                        </Text>
+                      </Pressable>
+                      {selected.dueAt && (
+                        <Pressable onPress={() => void patch({ dueAt: null })}>
+                          <Text style={s.link}>Remove reminder</Text>
+                        </Pressable>
+                      )}
+                      {label('PRIORITY')}
+                      <View style={s.modes}>
+                        {['None', 'Low', 'Medium', 'High'].map((v, n) => (
+                          <Pressable
+                            key={v}
+                            style={[
+                              s.mode,
+                              selected.priority === n && s.modeActive,
+                            ]}
+                            onPress={() => void patch({ priority: n })}
+                          >
+                            <Text
+                              style={{
+                                color:
+                                  selected.priority === n
+                                    ? c.accentInk
+                                    : c.muted,
+                                fontSize: 12,
+                              }}
+                            >
+                              {v}
+                            </Text>
+                          </Pressable>
+                        ))}
+                      </View>
+                      {!selected.parentId && (
+                        <>
+                          {label('SUBTASKS')}
+                          {snap.state.items
+                            .filter(
+                              i => i.parentId === selected.id && !i.deletedAt,
+                            )
+                            .map(i => (
+                              <Pressable
+                                key={i.id}
+                                style={s.subtask}
+                                onPress={() =>
+                                  void mutate('todo', { done: !i.done }, i.id)
+                                }
+                              >
+                                <Text style={{ color: c.ink }}>
+                                  {i.done ? '✓' : '○'} {i.title}
+                                </Text>
+                              </Pressable>
+                            ))}
+                          <TextInput
+                            style={inputStyle}
+                            placeholder="One smaller step…"
+                            placeholderTextColor={c.muted}
+                            value={subtask}
+                            onChangeText={setSubtask}
+                            onSubmitEditing={async () => {
+                              if (
+                                subtask.trim() &&
+                                (await mutate('todo', {
+                                  title: subtask.trim(),
+                                  parentId: selected.id,
+                                }))
+                              )
+                                setSubtask('');
+                            }}
+                          />
+                        </>
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      {label('YOUR RATING')}
+                      <View style={s.ratingOptions}>
+                        {[null, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5].map(n => (
+                          <Pressable
+                            key={String(n)}
+                            style={[
+                              s.mode,
+                              selected.rating === n && s.modeActive,
+                            ]}
+                            onPress={() => void patch({ rating: n })}
+                          >
+                            <Text style={{ color: c.ink }}>
+                              {n ?? 'Unrated'}
+                              {n ? ' ★' : ''}
+                            </Text>
+                          </Pressable>
+                        ))}
+                      </View>
+                    </>
+                  )}
+                  <Pressable
+                    onPress={async () => {
+                      await mutate(selected.kind, {}, selected.id, 'delete');
+                      setSelected(null);
+                    }}
+                  >
+                    <Text
+                      style={{ color: '#A7675B', marginTop: 36, fontSize: 13 }}
+                    >
+                      Move to trash
+                    </Text>
+                  </Pressable>
+                </ScrollView>
+              )}
+            </SafeAreaView>
+          </SafeAreaProvider>
+        </Modal>
+        <Modal
+          visible={settings}
+          animationType="slide"
+          onRequestClose={() => setSettings(false)}
+        >
+          <SafeAreaProvider>
+            <SafeAreaView style={[s.root, { backgroundColor: c.bg }]}>
+              <View style={s.sheetHeader}>
+                <Text style={[s.eyebrow, { color: c.muted }]}>
+                  MAKE IT YOURS
+                </Text>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Close settings"
+                  hitSlop={12}
+                  style={{
+                    minWidth: 44,
+                    minHeight: 44,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                  onPress={() => setSettings(false)}
+                >
+                  <Text style={{ fontSize: 24, color: c.ink }}>×</Text>
+                </Pressable>
+              </View>
+              <ScrollView contentContainerStyle={s.sheet}>
+                <Text style={[s.title, { color: c.ink }]}>
+                  Your little space.
+                </Text>
+                <Text style={[s.description, { color: c.muted }]}>
+                  {snap.email ?? 'Sign in to keep everything together.'}
+                </Text>
+                {label('APPEARANCE')}
+                <View
+                  accessibilityRole="radiogroup"
+                  style={{ flexDirection: 'row', gap: 10, marginBottom: 26 }}
+                >
+                  {(['system', 'light', 'dark'] as const).map(mode => (
+                    <Pressable
+                      key={mode}
+                      accessibilityRole="radio"
+                      accessibilityLabel={`${mode[0].toUpperCase() + mode.slice(1)} appearance`}
+                      accessibilityState={{ checked: snap.appearance === mode }}
+                      style={{
+                        paddingVertical: 13,
+                        paddingHorizontal: 18,
+                        borderRadius: themeGeometry.controlRadius,
+                        backgroundColor:
+                          snap.appearance === mode ? c.accent : c.surface,
+                        borderWidth: 1,
+                        borderColor: c.line,
+                      }}
+                      onPress={async () => {
+                        try {
+                          setSnap(JSON.parse(await native.setAppearance(mode)));
+                          setError('');
+                        } catch (e) {
+                          setError((e as Error).message);
+                        }
+                      }}
+                    >
+                      <Text
+                        style={{
+                          color: snap.appearance === mode ? c.accentInk : c.ink,
+                        }}
+                      >
+                        {mode[0].toUpperCase() + mode.slice(1)}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+                {snap.account && (
+                  <Pressable
+                    onPress={() => {
+                      setView('history');
+                      setSettings(false);
+                    }}
+                  >
+                    <Text style={[s.link, { color: c.ink, marginBottom: 20 }]}>
+                      Edit history · last 7 days ↗
+                    </Text>
+                  </Pressable>
+                )}
+                {label('REMINDER HEALTH')}
+                <Text style={[s.description, { color: c.muted }]}>
+                  {snap.preciseAlarms
+                    ? 'Precise alarm access is available.'
+                    : 'Reminders can be delayed without precise alarm access. Due tasks remain in your list.'}
+                </Text>
+                <Pressable
+                  style={s.primary}
+                  onPress={() => native.requestExactAlarms()}
+                >
+                  <Text style={s.primaryText}>
+                    Alarm permission settings ↗
+                  </Text>
+                </Pressable>
+                <Text
+                  style={[s.description, { color: c.muted, marginTop: 22 }]}
+                >
+                  Edit history and trash last seven days. Offline changes stay
+                  until synced. Force-stopping the app can pause widgets and
+                  reminders until you open it again.
+                </Text>
+                <Pressable
+                  onPress={() =>
+                    Linking.openURL(
+                      'https://github.com/wrestle-R/Task-tick/releases',
+                    )
+                  }
+                >
+                  <Text style={[s.link, { color: c.ink, marginTop: 32 }]}>
+                    Downloads & releases ↗
+                  </Text>
+                </Pressable>
+                {snap.account && (
+                  <Pressable onPress={() => void logout()}>
+                    <Text style={[s.link, { color: c.error, marginTop: 35 }]}>
+                      Sign out
+                    </Text>
+                  </Pressable>
+                )}
+              </ScrollView>
+            </SafeAreaView>
+          </SafeAreaProvider>
+        </Modal>
+      </SafeAreaView>
     </TextTone.Provider>
   );
 }
@@ -868,14 +1182,22 @@ function TaskRow({
         style={[
           s.check,
           { borderColor: colors.muted },
-          item.done && { backgroundColor: palette.accent, borderColor: palette.accent },
+          item.done && {
+            backgroundColor: palette.accent,
+            borderColor: palette.accent,
+          },
         ]}
       >
         <Text style={{ color: palette.accentInk }}>
           {trash ? '↶' : item.done ? '✓' : ''}
         </Text>
       </Pressable>
-      {item.kind === 'movie' && item.poster && <Image source={{uri:`https://image.tmdb.org/t/p/w92${item.poster}`}} style={s.poster}/>}
+      {item.kind === 'movie' && item.poster && (
+        <Image
+          source={{ uri: `https://image.tmdb.org/t/p/w92${item.poster}` }}
+          style={s.poster}
+        />
+      )}
       <Pressable onPress={onOpen} style={{ flex: 1 }}>
         <Text
           style={[
@@ -927,157 +1249,212 @@ function TaskRow({
     </Animated.View>
   );
 }
-const makeStyles = (palette: typeof themes.light | typeof themes.dark) => StyleSheet.create({
-  root: { flex: 1 },
-  header: {
-    paddingHorizontal: 25,
-    paddingTop: 12,
-    paddingBottom: 18,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  brand: { fontFamily: 'Manrope', fontSize: 20, fontWeight: '700', letterSpacing: -1 },
-  logo: { color: '#8D9F67', fontSize: 27 },
-  auth: { padding: 28, paddingTop: 40, paddingBottom: 80 },
-  eyebrow: { fontSize: 9, letterSpacing: 2, fontWeight: '600' },
-  authTitle: {
-    fontFamily: 'Manrope',
-    fontSize: 46,
-    fontWeight: '600',
-    letterSpacing: -2.5,
-    lineHeight: 53,
-    marginTop: 20,
-  },
-  description: { fontSize: 12, lineHeight: 21, marginTop: 12 },
-  label: { fontSize: 9, letterSpacing: 1.3, marginTop: 25, marginBottom: 10 },
-  input: { borderWidth: 1, borderRadius: themeGeometry.controlRadius, padding: 15, fontSize: 14 },
-  primary: {
-    backgroundColor: palette.accent,
-    padding: 17,
-    borderRadius: themeGeometry.controlRadius,
-    marginTop: 23,
-  },
-  primaryText: { color: palette.accentInk, fontWeight: '600', fontSize: 14 },
-  link: { fontSize: 12, marginTop: 19 },
-  modes: { flexDirection: 'row', gap: 4, marginHorizontal: 16, backgroundColor:palette.sidebar, padding:4, borderRadius:12 },
-  mode: { flex:1, alignItems:'center', paddingHorizontal:12, paddingVertical:12, borderRadius:9 },
-  modeActive: { backgroundColor: palette.surface, shadowColor:'#000',shadowOffset:{width:0,height:2},shadowOpacity:.1,shadowRadius:3,elevation:2 },
-  heading: { paddingHorizontal: 26, paddingTop: 33, paddingBottom: 26 },
-  title: {
-    fontFamily: 'Manrope',
-    fontSize: 34,
-    letterSpacing: -1.8,
-    fontWeight: '500',
-    marginTop: 14,
-  },
-  tabs: {
-    flexDirection: 'row',
-    gap: 24,
-    marginHorizontal: 26,
-    borderBottomWidth: 1,
-  },
-  tab: {
-    fontSize: 12,
-    paddingVertical: 15,
-    borderBottomWidth: 2,
-    borderBottomColor: 'transparent',
-  },
-  capture: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 9,
-    borderWidth: 1,
-    borderRadius: 11,
-    margin: 24,
-    marginBottom: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  captureInput: { flex: 1, fontSize: 13, paddingVertical: 10 },
-  addButton: {
-    fontSize: 11,
-    fontWeight: '600',
-    backgroundColor: palette.accent,
-    color: palette.accentInk,
-    padding: 9,
-    borderRadius: 6,
-  },
-  poster:{width:28,height:42,borderRadius:4,marginRight:4},
-  completedHeader:{flexDirection:'row',justifyContent:'space-between',alignItems:'center',backgroundColor:palette.surface,padding:16,marginTop:12,borderTopLeftRadius:14,borderTopRightRadius:14},
-  fab:{position:'absolute',bottom:70,right:23,width:56,height:56,borderRadius:28,alignItems:'center',justifyContent:'center',backgroundColor:palette.accent,shadowColor:'#000',shadowOffset:{width:0,height:4},shadowOpacity:.2,shadowRadius:8,elevation:5},
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 13,
-    backgroundColor:palette.surface,
-    borderBottomWidth: 0,
-    minHeight: 54,
-    paddingHorizontal:14,
-    paddingVertical: 10,
-    borderRadius:8,
-  },
-  check: {
-    width: 21,
-    height: 21,
-    borderRadius: 6,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  itemTitle: { fontSize: 15, lineHeight: 22 },
-  footer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    padding: 14,
-    borderTopWidth: 0,
-  },
-  empty: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 35,
-  },
-  emptyTitle: { fontSize: 19, marginTop: 15 },
-  error: {
-    backgroundColor: '#B97F6A15',
-    padding: 16,
-    marginHorizontal: 20,
-    marginBottom: 12,
-    borderRadius: 8,
-  },
-  undo: {
-    position: 'absolute',
-    bottom: 35,
-    left: 24,
-    right: 24,
-    backgroundColor: '#2C3427',
-    padding: 20,
-    borderRadius: 12,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  sheetHeader: {
-    padding: 25,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  sheet: { padding: 27, paddingTop: 5, paddingBottom: 70 },
-  ratingOptions: { flexDirection: 'row', flexWrap: 'wrap', gap: 7 },
-  subtask: { paddingVertical: 12 },
-  movieSearch: {
-    paddingHorizontal: 24,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    marginBottom: 10,
-  },
-  movieInput: {
-    flex: 1,
-    borderBottomWidth: 1,
-    paddingVertical: 10,
-    fontSize: 12,
-  },
-  result: { padding: 23, borderBottomWidth: 1 },
-});
+const makeStyles = (palette: typeof themes.light | typeof themes.dark) =>
+  StyleSheet.create({
+    root: { flex: 1 },
+    header: {
+      paddingHorizontal: 25,
+      paddingTop: 12,
+      paddingBottom: 18,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+    },
+    brand: {
+      fontFamily: 'Manrope',
+      fontSize: 20,
+      fontWeight: '700',
+      letterSpacing: -1,
+    },
+    logo: { color: '#8D9F67', fontSize: 27 },
+    auth: { padding: 28, paddingTop: 40, paddingBottom: 80 },
+    eyebrow: { fontSize: 9, letterSpacing: 2, fontWeight: '600' },
+    authTitle: {
+      fontFamily: 'Manrope',
+      fontSize: 46,
+      fontWeight: '600',
+      letterSpacing: -2.5,
+      lineHeight: 53,
+      marginTop: 20,
+    },
+    description: { fontSize: 12, lineHeight: 21, marginTop: 12 },
+    label: { fontSize: 9, letterSpacing: 1.3, marginTop: 25, marginBottom: 10 },
+    input: {
+      borderWidth: 1,
+      borderRadius: themeGeometry.controlRadius,
+      padding: 15,
+      fontSize: 14,
+    },
+    primary: {
+      backgroundColor: palette.accent,
+      padding: 17,
+      borderRadius: themeGeometry.controlRadius,
+      marginTop: 23,
+    },
+    primaryText: { color: palette.accentInk, fontWeight: '600', fontSize: 14 },
+    link: { fontSize: 12, marginTop: 19 },
+    modes: {
+      flexDirection: 'row',
+      gap: 4,
+      marginHorizontal: 16,
+      backgroundColor: palette.sidebar,
+      padding: 4,
+      borderRadius: 12,
+    },
+    mode: {
+      flex: 1,
+      alignItems: 'center',
+      paddingHorizontal: 12,
+      paddingVertical: 12,
+      borderRadius: 9,
+    },
+    modeActive: {
+      backgroundColor: palette.surface,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.1,
+      shadowRadius: 3,
+      elevation: 2,
+    },
+    heading: { paddingHorizontal: 26, paddingTop: 33, paddingBottom: 26 },
+    title: {
+      fontFamily: 'Manrope',
+      fontSize: 34,
+      letterSpacing: -1.8,
+      fontWeight: '500',
+      marginTop: 14,
+    },
+    tabs: {
+      flexDirection: 'row',
+      gap: 24,
+      marginHorizontal: 26,
+      borderBottomWidth: 1,
+    },
+    tab: {
+      fontSize: 12,
+      paddingVertical: 15,
+      borderBottomWidth: 2,
+      borderBottomColor: 'transparent',
+    },
+    capture: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 9,
+      borderWidth: 1,
+      borderRadius: 11,
+      margin: 24,
+      marginBottom: 6,
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+    },
+    captureInput: { flex: 1, fontSize: 13, paddingVertical: 10 },
+    addButton: {
+      fontSize: 11,
+      fontWeight: '600',
+      backgroundColor: palette.accent,
+      color: palette.accentInk,
+      padding: 9,
+      borderRadius: 6,
+    },
+    poster: { width: 28, height: 42, borderRadius: 4, marginRight: 4 },
+    completedHeader: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      backgroundColor: palette.surface,
+      padding: 16,
+      marginTop: 12,
+      borderTopLeftRadius: 14,
+      borderTopRightRadius: 14,
+    },
+    fab: {
+      position: 'absolute',
+      bottom: 70,
+      right: 23,
+      width: 56,
+      height: 56,
+      borderRadius: 28,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: palette.accent,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.2,
+      shadowRadius: 8,
+      elevation: 5,
+    },
+    row: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 13,
+      backgroundColor: palette.surface,
+      borderBottomWidth: 0,
+      minHeight: 54,
+      paddingHorizontal: 14,
+      paddingVertical: 10,
+      borderRadius: 8,
+    },
+    check: {
+      width: 21,
+      height: 21,
+      borderRadius: 6,
+      borderWidth: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    itemTitle: { fontSize: 15, lineHeight: 22 },
+    footer: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      padding: 14,
+      borderTopWidth: 0,
+    },
+    empty: {
+      flex: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+      padding: 35,
+    },
+    emptyTitle: { fontSize: 19, marginTop: 15 },
+    error: {
+      backgroundColor: '#B97F6A15',
+      padding: 16,
+      marginHorizontal: 20,
+      marginBottom: 12,
+      borderRadius: 8,
+    },
+    undo: {
+      position: 'absolute',
+      bottom: 35,
+      left: 24,
+      right: 24,
+      backgroundColor: '#2C3427',
+      padding: 20,
+      borderRadius: 12,
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+    },
+    sheetHeader: {
+      padding: 25,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+    },
+    sheet: { padding: 27, paddingTop: 5, paddingBottom: 70 },
+    ratingOptions: { flexDirection: 'row', flexWrap: 'wrap', gap: 7 },
+    subtask: { paddingVertical: 12 },
+    movieSearch: {
+      paddingHorizontal: 24,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+      marginBottom: 10,
+    },
+    movieInput: {
+      flex: 1,
+      borderBottomWidth: 1,
+      paddingVertical: 10,
+      fontSize: 12,
+    },
+    result: { padding: 23, borderBottomWidth: 1 },
+  });

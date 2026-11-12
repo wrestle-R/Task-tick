@@ -51,6 +51,8 @@ type Props = {
   storage?: Storage;
   initialConfig?: Config;
   desktop?: boolean;
+  onSession?: (session: Session | null) => Promise<void>;
+  nativeUpdates?: { check(): Promise<string | null>; install(): Promise<void> };
   nativeReminderSettings?: {
     get(): Promise<boolean>;
     set(enabled: boolean): Promise<void>;
@@ -69,6 +71,8 @@ export function Workspace({
   storage = browserStorage,
   initialConfig,
   desktop = false,
+  onSession,
+  nativeUpdates,
   nativeReminderSettings,
 }: Props) {
   const [config, setConfig] = useState<Config | null>(initialConfig ?? null),
@@ -100,6 +104,39 @@ export function Workspace({
     [finding, setFinding] = useState(false),
     [settings, setSettings] = useState(false),
     [reminders, setReminders] = useState(false);
+  const [updateVersion, setUpdateVersion] = useState<string | null>(null);
+  const [updating, setUpdating] = useState(false);
+  useEffect(() => {
+    if (!nativeUpdates) return;
+    let live = true;
+    const check = () => {
+      void nativeUpdates
+        .check()
+        .then((v) => {
+          if (live) setUpdateVersion(v);
+        })
+        .catch(() => {});
+    };
+    check();
+    const timer = setInterval(check, 30 * 60 * 1000);
+    window.addEventListener("focus", check);
+    return () => {
+      live = false;
+      clearInterval(timer);
+      window.removeEventListener("focus", check);
+    };
+  }, [nativeUpdates]);
+  async function installUpdate() {
+    if (!nativeUpdates || updating) return;
+    setUpdating(true);
+    try {
+      await queue.current;
+      await nativeUpdates.install();
+    } catch (e) {
+      setError(String(e));
+      setUpdating(false);
+    }
+  }
   const stateRef = useRef(state),
     accountRef = useRef(""),
     queue = useRef(Promise.resolve()),
@@ -181,19 +218,23 @@ export function Workspace({
     setState(emptyState());
     setSelected(null);
     void Promise.resolve(storage.activate?.(account || null))
-        .then(() => account && live ? storage.load(account) : null)
-        .then((s) => {
-          if (live && s) {
-            stateRef.current = s;
-            setState(s);
-            setReady(true);
-          }
-        })
-        .catch((e) => setError(`Local storage: ${e.message}`));
+      .then(() => (account && live ? storage.load(account) : null))
+      .then((s) => {
+        if (live && s) {
+          stateRef.current = s;
+          setState(s);
+          setReady(true);
+        }
+      })
+      .catch((e) => setError(`Local storage: ${e.message}`));
     return () => {
       live = false;
     };
   }, [session?.user.id, storage]);
+  useEffect(() => {
+    if (!onSession || !authReady || (session && !ready)) return;
+    void onSession(session).catch((e) => setError(String(e)));
+  }, [onSession, session, authReady, ready]);
   const change = useCallback(
     (fn: (s: State) => State) => {
       const account = accountRef.current;
@@ -246,20 +287,37 @@ export function Workspace({
       if (auth.session && auth.session.user.id !== account) return;
       if (!auth.session)
         throw new Error("Sign in again to sync. Your edits are saved here.");
-      const result = await collectSyncPages(async (page) => {
-        if (account !== accountRef.current) throw new Error("Account changed during sync.");
-        const response = await fetch(`${config.api}/api/sync`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${auth.session!.access_token}` },
-          body: JSON.stringify(page),
-        });
-        const value = await response.json();
-        if (!response.ok) throw new Error(value.error ?? "Sync unavailable");
-        return value;
-      }, pending, fresh.confirmedItems ? fresh.cursor : 0, async (page) => {
-        if (account !== accountRef.current) throw new Error("Account changed during sync.");
-        await change(s => reconcile({ ...s, history: page.history }, page.items, page.accepted, page.cursor));
-      });
+      const result = await collectSyncPages(
+        async (page) => {
+          if (account !== accountRef.current)
+            throw new Error("Account changed during sync.");
+          const response = await fetch(`${config.api}/api/sync`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${auth.session!.access_token}`,
+            },
+            body: JSON.stringify(page),
+          });
+          const value = await response.json();
+          if (!response.ok) throw new Error(value.error ?? "Sync unavailable");
+          return value;
+        },
+        pending,
+        fresh.confirmedItems ? fresh.cursor : 0,
+        async (page) => {
+          if (account !== accountRef.current)
+            throw new Error("Account changed during sync.");
+          await change((s) =>
+            reconcile(
+              { ...s, history: page.history },
+              page.items,
+              page.accepted,
+              page.cursor,
+            ),
+          );
+        },
+      );
       if (account !== accountRef.current) return;
       await change((s) =>
         reconcile(
@@ -353,10 +411,11 @@ export function Workspace({
     setError("");
     setMessage("");
     try {
-      const redirect =
-        desktop
-          ? `${config?.api ?? "https://task-tick-beige.vercel.app"}/app`
-          : typeof window === "undefined" ? "" : `${window.location.origin}/app`;
+      const redirect = desktop
+        ? `${config?.api ?? "https://task-tick-beige.vercel.app"}/app`
+        : typeof window === "undefined"
+          ? ""
+          : `${window.location.origin}/app`;
       const result =
         authMode === "signup"
           ? await client.auth.signUp({
@@ -415,7 +474,7 @@ export function Workspace({
     )
       return;
     await change((s) => apply(s, createMutation(kind, { title: t })));
-    setTitle("");
+    setTitle((current) => (current.trim() === t ? "" : current));
     void sync();
   }
   async function toggle(item: Item) {
@@ -455,39 +514,43 @@ export function Workspace({
     setSelected(null);
     void sync();
   }
-  async function findMovies() {
-    if (!query.trim() || !session || !config) return;
-    setFinding(true);
-    try {
-      const r = await fetch(
-        `${config.api}/api/movies?q=${encodeURIComponent(query)}`,
-        { headers: { Authorization: `Bearer ${session.access_token}` } },
-      );
-      const d = await r.json();
-      if (!r.ok) throw new Error(d.error);
-      setTmdb(d.results);
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setFinding(false);
-    }
-  }
   useEffect(() => {
     setTmdb([]);
-    if(kind !== "movie" || view !== "active" || title.trim().length < 2 || !session || !config || !online) return;
+    if (
+      kind !== "movie" ||
+      view !== "active" ||
+      title.trim().length < 2 ||
+      !session ||
+      !config ||
+      !online
+    )
+      return;
     const controller = new AbortController();
     const account = session.user.id;
     const timer = setTimeout(async () => {
       setFinding(true);
       try {
-        const r = await fetch(`${config.api}/api/movies?q=${encodeURIComponent(title.trim())}`, {signal: controller.signal, headers: {Authorization: `Bearer ${session.access_token}`}});
+        const r = await fetch(
+          `${config.api}/api/movies?q=${encodeURIComponent(title.trim())}`,
+          {
+            signal: controller.signal,
+            headers: { Authorization: `Bearer ${session.access_token}` },
+          },
+        );
         const d = await r.json();
-        if(!r.ok) throw new Error(d.error);
-        if(!controller.signal.aborted && accountRef.current === account) setTmdb(d.results);
-      } catch(e) {if(!controller.signal.aborted) setError((e as Error).message);}
-      finally {if(!controller.signal.aborted) setFinding(false);}
+        if (!r.ok) throw new Error(d.error);
+        if (!controller.signal.aborted && accountRef.current === account)
+          setTmdb(d.results);
+      } catch (e) {
+        if (!controller.signal.aborted) setError((e as Error).message);
+      } finally {
+        if (!controller.signal.aborted) setFinding(false);
+      }
     }, 350);
-    return () => {clearTimeout(timer);controller.abort();};
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
   }, [title, kind, view, session, config, online]);
   async function addMovie(movie: Tmdb) {
     const existing = duplicate(state.items, movie.media_type, movie.id);
@@ -511,29 +574,95 @@ export function Workspace({
     setTitle("");
     void sync();
   }
-  const items = (view === "history" ? [] : view === "trash"
-    ? [...visible(state, "todo", "trash"), ...visible(state, "movie", "trash")]
-    : [...visible(state, kind), ...visible(state, kind, "done")])
-    .filter(i => i.title.toLocaleLowerCase().includes(query.toLocaleLowerCase()));
+  const items = (
+    view === "history"
+      ? []
+      : view === "trash"
+        ? [
+            ...visible(state, "todo", "trash"),
+            ...visible(state, "movie", "trash"),
+          ]
+        : [...visible(state, kind), ...visible(state, kind, "done")]
+  ).filter((i) =>
+    i.title.toLocaleLowerCase().includes(query.toLocaleLowerCase()),
+  );
   const [completedOpen, setCompletedOpen] = useState(true);
-  const shownItems = items.filter(i => view === "trash" || !i.done || completedOpen);
+  const shownItems = items.filter(
+    (i) => view === "trash" || !i.done || completedOpen,
+  );
   const active = visible(state, kind).filter((i) => !i.parentId),
     done = visible(state, kind, "done");
   return (
     <div className="tick-shell">
       <header className="tick-topbar">
-        <a className="tick-brand" href={desktop ? "#" : "/"}><span className="tick-mark"><Check size={20}/></span>Task-tick</a>
-        {session && <nav className="top-navigation" aria-label="Lists">
-          {(["todo", "movie", "trash"] as const).map(tab => <button key={tab}
-            aria-current={(tab === "trash" ? view === "trash" : kind === tab && view !== "trash") ? "page" : undefined}
-            onClick={() => {if(tab !== "trash") setKind(tab);setView(tab === "trash" ? "trash" : "active");setSelected(null);setQuery("");setTitle("");setTmdb([]);}}>
-            {tab === "todo" ? <ListTodo size={17}/> : tab === "movie" ? <Clapperboard size={17}/> : <Trash2 size={17}/>}
-            {tab === "todo" ? "Todos" : tab === "movie" ? "Watchlist" : "Trash"}
-          </button>)}
-        </nav>}
+        <a className="tick-brand" href={desktop ? "#" : "/"}>
+          <span className="tick-mark">
+            <Check size={20} />
+          </span>
+          Task-tick
+        </a>
+        {session && (
+          <nav className="top-navigation" aria-label="Lists">
+            {(["todo", "movie", "trash"] as const).map((tab) => (
+              <button
+                key={tab}
+                aria-current={
+                  (
+                    tab === "trash"
+                      ? view === "trash"
+                      : kind === tab && view !== "trash"
+                  )
+                    ? "page"
+                    : undefined
+                }
+                onClick={() => {
+                  if (tab !== "trash") setKind(tab);
+                  setView(tab === "trash" ? "trash" : "active");
+                  setSelected(null);
+                  setQuery("");
+                  setTitle("");
+                  setTmdb([]);
+                }}
+              >
+                {tab === "todo" ? (
+                  <ListTodo size={17} />
+                ) : tab === "movie" ? (
+                  <Clapperboard size={17} />
+                ) : (
+                  <Trash2 size={17} />
+                )}
+                {tab === "todo"
+                  ? "Todos"
+                  : tab === "movie"
+                    ? "Watchlist"
+                    : "Trash"}
+              </button>
+            ))}
+          </nav>
+        )}
         <div className="top-actions">
-          <SkeuoThemeButton theme={dark ? "dark" : "light"} onThemeChange={t => setDark(t === "dark")} aria-label="Toggle theme"/>
-          <SkeuoButton square size="sm" aria-label="Settings" onClick={() => setSettings(true)}><Settings size={18}/></SkeuoButton>
+          {updateVersion && (
+            <SkeuoButton
+              size="sm"
+              loading={updating}
+              onClick={() => void installUpdate()}
+            >
+              <Download size={15} /> Update {updateVersion}
+            </SkeuoButton>
+          )}
+          <SkeuoThemeButton
+            theme={dark ? "dark" : "light"}
+            onThemeChange={(t) => setDark(t === "dark")}
+            aria-label="Toggle theme"
+          />
+          <SkeuoButton
+            square
+            size="sm"
+            aria-label="Settings"
+            onClick={() => setSettings(true)}
+          >
+            <Settings size={18} />
+          </SkeuoButton>
         </div>
       </header>
       <main className="tick-main">
@@ -616,7 +745,12 @@ export function Workspace({
                   />
                 </label>
               )}
-              <SkeuoButton variant="primary" type="submit" loading={authBusy} disabled={!authReady}>
+              <SkeuoButton
+                variant="primary"
+                type="submit"
+                loading={authBusy}
+                disabled={!authReady}
+              >
                 {authBusy
                   ? "One moment…"
                   : authMode === "signup"
@@ -691,8 +825,24 @@ export function Workspace({
               </div>
             </section>
             <div className="list-toolbar">
-              <div className="search-input"><Search size={16}/><input aria-label="Search your list" value={query} onChange={e => setQuery(e.target.value)} placeholder="Search your list…"/></div>
-              <button className="quiet-action" onClick={() => setView(view === "history" ? "active" : "history")}><History size={15}/> {view === "history" ? "Back to list" : "Edit history"}</button>
+              <div className="search-input">
+                <Search size={16} />
+                <input
+                  aria-label="Search your list"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Search your list…"
+                />
+              </div>
+              <button
+                className="quiet-action"
+                onClick={() =>
+                  setView(view === "history" ? "active" : "history")
+                }
+              >
+                <History size={15} />{" "}
+                {view === "history" ? "Back to list" : "Edit history"}
+              </button>
             </div>
             {view === "active" && (
               <form className="capture" onSubmit={add}>
@@ -739,7 +889,14 @@ export function Workspace({
                       key={`${m.media_type}:${m.id}`}
                       onClick={() => void addMovie(m)}
                     >
-                      {m.poster_path && <img className="movie-poster" src={`https://image.tmdb.org/t/p/w92${m.poster_path}`} alt="" loading="lazy"/>}
+                      {m.poster_path && (
+                        <img
+                          className="movie-poster"
+                          src={`https://image.tmdb.org/t/p/w92${m.poster_path}`}
+                          alt=""
+                          loading="lazy"
+                        />
+                      )}
                       <span>
                         {m.title ?? m.name}
                         <small>
@@ -803,101 +960,142 @@ export function Workspace({
               ) : (
                 shownItems.map((item, index) => (
                   <React.Fragment key={item.id}>
-                  {view !== "trash" && item.done && (index === 0 || !shownItems[index - 1].done) && <button className="completed-heading" aria-expanded={completedOpen} onClick={() => setCompletedOpen(!completedOpen)}>Completed <span>{done.length} ⌄</span></button>}
-                  <div
-                    className={`task-row ${item.done ? "is-done" : ""} ${item.parentId ? "is-child" : ""}`}
-                    key={item.id}
-                    draggable={view === "active" && !item.done}
-                    onDragStart={(e) =>
-                      e.dataTransfer.setData("text/plain", item.id)
-                    }
-                    onDragOver={(e) => e.preventDefault()}
-                    onDrop={(e) => {
-                      e.preventDefault();
-                      const movedId = e.dataTransfer.getData("text/plain");
-                      void change((current) => planMove(visible(current, kind, "active"), movedId, item.id)
-                        .reduce((next, move) => apply(next, createMutation(kind, { position: move.position }, move.itemId)), current))
-                        .then(() => sync());
-                    }}
-                  >
-                    {view === "trash" ? (
-                      <Trash2 size={18} />
-                    ) : (
-                      <button
-                        className="checkbox"
-                        aria-label={
-                          item.done ? "Mark unfinished" : "Complete item"
-                        }
-                        onClick={() => void toggle(item)}
-                      >
-                        {item.done && <Check size={15} />}
-                      </button>
-                    )}
-                    {item.kind === "movie" && item.poster && <img className="movie-poster" src={`https://image.tmdb.org/t/p/w92${item.poster}`} alt="" loading="lazy"/>}
-                    <button
-                      className="task-title"
-                      onClick={() => setSelected(item)}
-                    >
-                      {item.title}
-                      <small>
-                        {item.dueAt && (
-                          <span
-                            className={
-                              Date.parse(item.dueAt) < Date.now()
-                                ? "overdue"
-                                : ""
-                            }
-                          >
-                            {new Date(item.dueAt).toLocaleDateString(
-                              undefined,
-                              { month: "short", day: "numeric" },
-                            )}{" "}
-                            ·{" "}
-                            {new Date(item.dueAt).toLocaleTimeString(
-                              undefined,
-                              { hour: "2-digit", minute: "2-digit" },
-                            )}
-                          </span>
-                        )}
-                        {item.notes && <span>{item.notes.slice(0, 70)}</span>}
-                        {item.mediaType && (
-                          <span>
-                            {item.mediaType === "tv" ? "TV SERIES" : "FILM"}
-                          </span>
-                        )}
-                      </small>
-                    </button>
-                    {item.rating && (
-                      <span className="rating">★ {item.rating}</span>
-                    )}
-                    {item.priority > 0 && (
-                      <span className={`priority priority-${item.priority}`}>
-                        {["", "Low", "Medium", "High"][item.priority]}
-                      </span>
-                    )}
-                    {view === "trash" ? (
-                      <button
-                        aria-label="Restore item"
-                        onClick={() => void remove(item, true)}
-                      >
-                        <RotateCcw size={17} />
-                      </button>
-                    ) : (
-                      <>
+                    {view !== "trash" &&
+                      item.done &&
+                      (index === 0 || !shownItems[index - 1].done) && (
                         <button
-                          className="row-delete"
-                          aria-label="Move to trash"
-                          onClick={() => void remove(item)}
+                          className="completed-heading"
+                          aria-expanded={completedOpen}
+                          onClick={() => setCompletedOpen(!completedOpen)}
                         >
-                          <Trash2 size={16} />
+                          Completed <span>{done.length} ⌄</span>
                         </button>
-                        <GripVertical className="drag-handle" size={15} />
-                      </>
-                    )}
-                  </div></React.Fragment>
+                      )}
+                    <div
+                      className={`task-row ${item.done ? "is-done" : ""} ${item.parentId ? "is-child" : ""}`}
+                      key={item.id}
+                      draggable={view === "active" && !item.done}
+                      onDragStart={(e) =>
+                        e.dataTransfer.setData("text/plain", item.id)
+                      }
+                      onDragOver={(e) => e.preventDefault()}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        const movedId = e.dataTransfer.getData("text/plain");
+                        void change((current) =>
+                          planMove(
+                            visible(current, kind, "active"),
+                            movedId,
+                            item.id,
+                          ).reduce(
+                            (next, move) =>
+                              apply(
+                                next,
+                                createMutation(
+                                  kind,
+                                  { position: move.position },
+                                  move.itemId,
+                                ),
+                              ),
+                            current,
+                          ),
+                        ).then(() => sync());
+                      }}
+                    >
+                      {view === "trash" ? (
+                        <Trash2 size={18} />
+                      ) : (
+                        <button
+                          className="checkbox"
+                          aria-label={
+                            item.done ? "Mark unfinished" : "Complete item"
+                          }
+                          onClick={() => void toggle(item)}
+                        >
+                          {item.done && <Check size={15} />}
+                        </button>
+                      )}
+                      {item.kind === "movie" && item.poster && (
+                        <img
+                          className="movie-poster"
+                          src={`https://image.tmdb.org/t/p/w92${item.poster}`}
+                          alt=""
+                          loading="lazy"
+                        />
+                      )}
+                      <button
+                        className="task-title"
+                        onClick={() => setSelected(item)}
+                      >
+                        {item.title}
+                        <small>
+                          {item.dueAt && (
+                            <span
+                              className={
+                                Date.parse(item.dueAt) < Date.now()
+                                  ? "overdue"
+                                  : ""
+                              }
+                            >
+                              {new Date(item.dueAt).toLocaleDateString(
+                                undefined,
+                                { month: "short", day: "numeric" },
+                              )}{" "}
+                              ·{" "}
+                              {new Date(item.dueAt).toLocaleTimeString(
+                                undefined,
+                                { hour: "2-digit", minute: "2-digit" },
+                              )}
+                            </span>
+                          )}
+                          {item.notes && <span>{item.notes.slice(0, 70)}</span>}
+                          {item.mediaType && (
+                            <span>
+                              {item.mediaType === "tv" ? "TV SERIES" : "FILM"}
+                            </span>
+                          )}
+                        </small>
+                      </button>
+                      {item.rating && (
+                        <span className="rating">★ {item.rating}</span>
+                      )}
+                      {item.priority > 0 && (
+                        <span className={`priority priority-${item.priority}`}>
+                          {["", "Low", "Medium", "High"][item.priority]}
+                        </span>
+                      )}
+                      {view === "trash" ? (
+                        <button
+                          aria-label="Restore item"
+                          onClick={() => void remove(item, true)}
+                        >
+                          <RotateCcw size={17} />
+                        </button>
+                      ) : (
+                        <>
+                          <button
+                            className="row-delete"
+                            aria-label="Move to trash"
+                            onClick={() => void remove(item)}
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                          <GripVertical className="drag-handle" size={15} />
+                        </>
+                      )}
+                    </div>
+                  </React.Fragment>
                 ))
               )}
-              {view === "active" && !completedOpen && done.length > 0 && <button className="completed-heading" aria-expanded={false} onClick={() => setCompletedOpen(true)}>Completed <span>{done.length} ›</span></button>}
+              {view === "active" && !completedOpen && done.length > 0 && (
+                <button
+                  className="completed-heading"
+                  aria-expanded={false}
+                  onClick={() => setCompletedOpen(true)}
+                >
+                  Completed <span>{done.length} ›</span>
+                </button>
+              )}
               {ready && view !== "history" && items.length === 0 && (
                 <div className="empty-state">
                   <span>{kind === "todo" ? "✓" : "✶"}</span>
@@ -1109,11 +1307,20 @@ export function Workspace({
             <span className="section-kicker">MAKE IT YOURS</span>
             <h2>Settings</h2>
             {session && <p className="muted">{session.user.email}</p>}
-            <SkeuoThemeButton theme={dark ? "dark" : "light"} onThemeChange={t => setDark(t === "dark")}/>
-            {session && <SkeuoButton onClick={() => void signout()}><LogOut size={16}/> Sign out</SkeuoButton>}
+            <SkeuoThemeButton
+              theme={dark ? "dark" : "light"}
+              onThemeChange={(t) => setDark(t === "dark")}
+            />
+            {session && (
+              <SkeuoButton onClick={() => void signout()}>
+                <LogOut size={16} /> Sign out
+              </SkeuoButton>
+            )}
             <label>
               <span>Reminders on this {desktop ? "desktop" : "browser"}</span>
-              <SkeuoSwitch aria-label="Reminders" checked={reminders}
+              <SkeuoSwitch
+                aria-label="Reminders"
+                checked={reminders}
                 onCheckedChange={async (enabled) => {
                   if (nativeReminderSettings) {
                     try {

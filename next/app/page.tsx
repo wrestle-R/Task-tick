@@ -1,39 +1,112 @@
 import Link from "next/link";
 import Image from "next/image";
-import { ArrowUpRight, Check, WifiOff, Monitor, Smartphone, Plus } from "lucide-react";
-import { SkeuoSurface } from "@tick/ui/skeuo";
+import { ArrowUpRight, ArrowRight } from "lucide-react";
 import { MarketingSite } from "./site-navigation";
 export default function Home() {
-  return <MarketingSite>
-    <main className="desk-landing">
-      <section className="desk-hero" aria-labelledby="hero-heading">
-        <div className="desk-intro">
-          <span className="desk-label">A SMALL APP FOR THE EVERYDAY</span>
-          <h1 id="hero-heading">A little less<br/>on your mind.</h1>
-          <p>Things to do. Films to watch.<br/>One quiet place to put them.</p>
-          <Link className="desk-launch" href="/app">Make a little room <ArrowUpRight size={18}/></Link>
-          <span className="hero-footnote">Android · Linux · Web</span>
+  return (
+    <MarketingSite>
+      <main>
+        <section className="site-hero" aria-labelledby="hero-heading">
+          <div className="hero-art" aria-hidden="true">
+            <Image src="/hero-fold.png" alt="" width={1254} height={1254} preload sizes="(max-width: 760px) 100vw, 62vw" />
+          </div>
+          <div className="hero-copy">
+            <h1 id="hero-heading">A little less<br />on your mind.</h1>
+            <p>Things to do. Films to watch.</p>
+            <Link className="hero-cta" href="/app">Make a little room <ArrowUpRight size={21} /></Link>
+            <span className="hero-footnote">Android · Linux · Web</span>
+          </div>
+        </section>
+        <section className="site-strip">
+          <span>Less opening apps.</span>
+          <span>More actually doing things.</span>
+          <span>A widget away.</span>
+        </section>
+        <section className="site-story">
+          <span className="section-kicker">SMALL ON PURPOSE</span>
+          <div>
+            <h2>
+              Not another place
+              <br />
+              to manage your life.
+              <br />
+              <em>A little less to manage.</em>
+            </h2>
+            <div className="story-copy">
+              <p>
+                One todo list. One watchlist. Two widgets that put the important
+                bits right on your home screen.
+              </p>
+              <p>
+                Check something off. Add a thought before it disappears. Pick a
+                film for tonight. Without turning any of it into a project.
+              </p>
+              <Link href="/docs">
+                See how it works <ArrowRight size={16} />
+              </Link>
+            </div>
+          </div>
+        </section>
+        <section className="site-features">
+          <article>
+            <span>01 / WITHIN REACH</span>
+            <h3>
+              The widget is
+              <br />
+              the whole point.
+            </h3>
+            <p>
+              Add, finish, and undo right from your home screen. Your lists,
+              without the detour.
+            </p>
+          </article>
+          <article>
+            <span>02 / NO SIGNAL? NO PROBLEM.</span>
+            <h3>
+              Offline is
+              <br />a normal day.
+            </h3>
+            <p>
+              Your changes save on your device first. We catch everything up
+              when you’re connected.
+            </p>
+          </article>
+          <article>
+            <span>03 / YOUR OWN LITTLE SPACE</span>
+            <h3>
+              One list.
+              <br />
+              All your devices.
+            </h3>
+            <p>
+              Phone, Linux desktop, and browser. Private to your account. Ready
+              when you are.
+            </p>
+          </article>
+        </section>
+        <section className="site-outro">
+          <span className="section-kicker">ONE LESS THING TO THINK ABOUT</span>
+          <h2>
+            Write it down.
+            <br />
+            <em>Get on with your day.</em>
+          </h2>
+          <Link href="/app" className="hero-cta">
+            Your space is waiting <ArrowUpRight size={19} />
+          </Link>
+        </section>
+      </main>
+      <footer className="site-footer">
+        <Link className="tick-brand" href="/">
+          Task-tick
+        </Link>
+        <span>A little less on your mind.</span>
+        <div>
+          <Link href="/docs">Docs</Link>
+          <Link href="/downloads">Downloads</Link>
+          <a href="https://github.com/wrestle-R/Task-tick">GitHub ↗</a>
         </div>
-        <div className="desk-object" aria-label="A preview of the Task-tick list widget">
-          <div className="fold-stamp"><Image src="/hero-fold.png" alt="" width={1254} height={1254} preload sizes="160px"/></div>
-          <SkeuoSurface className="landing-widget">
-            <div className="preview-heading"><span>Today, gently.</span><Plus size={21}/></div>
-            <div className="preview-row"><span className="preview-check"/>Send that email</div>
-            <div className="preview-row"><span className="preview-check"/>A walk, without the phone</div>
-            <div className="preview-row"><span className="preview-check"/>Pick a film for tonight</div>
-            <div className="preview-row preview-done"><span className="preview-check"><Check size={12}/></span>Write it down</div>
-            <span className="preview-caption">A widget away. Even offline.</span>
-          </SkeuoSurface>
-          <span className="object-note">Less opening apps.<br/>More getting on with it.</span>
-        </div>
-      </section>
-      <section className="desk-details" aria-label="How it fits your day">
-        <article><Smartphone size={22}/><h2>The widget is the point.</h2><p>Two compact lists. Add a thought, finish a task, pick your next film. Right from your home screen.</p></article>
-        <article><WifiOff size={22}/><h2>No signal is normal.</h2><p>Changes save on your device first. Reconnect and your lists catch up across your signed-in devices.</p></article>
-        <article><Monitor size={22}/><h2>A little room, everywhere.</h2><p>Android, a Linux desktop app and your browser. Your own account, your own space.</p></article>
-      </section>
-      <section className="desk-bottom"><div><span className="desk-label">SMALL ON PURPOSE</span><h2>One todo list.<br/>One watchlist. That’s plenty.</h2></div><div><p>Not everything needs a dashboard.<br/>Sometimes you just need to write it down.</p><Link className="desk-launch" href="/app">Open your space <ArrowUpRight size={18}/></Link></div></section>
-    </main>
-    <footer className="site-footer"><Link className="tick-brand" href="/">Task-tick</Link><span>A little less on your mind.</span><div><Link href="/docs">Docs</Link><Link href="/downloads">Downloads</Link><a href="https://github.com/wrestle-R/Task-tick">GitHub ↗</a></div></footer>
-  </MarketingSite>;
+      </footer>
+    </MarketingSite>
+  );
 }

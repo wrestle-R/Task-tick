@@ -1,6 +1,5 @@
 "use client";
 import Link from "next/link";
-import { SkeuoThemeButton } from "@tick/ui/skeuo";
 import { Menu, Moon, Sun, X, ArrowUpRight } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
@@ -39,7 +38,12 @@ export function MarketingSite({ children }: { children: ReactNode }) {
           Task-tick
         </Link>
         <div className="site-nav-actions">
-          <SkeuoThemeButton theme={theme} onThemeChange={setTheme} aria-label={theme === "dark" ? "Use light theme" : "Use dark theme"}/>
+          <button className="site-theme-toggle" aria-label={theme === "dark" ? "Use light theme" : "Use dark theme"} onClick={() => setTheme(theme === "dark" ? "light" : "dark")}>
+            <span className="theme-track" aria-hidden="true">
+              <span className={theme === "light" ? "theme-option active" : "theme-option"}><Sun size={17} /></span>
+              <span className={theme === "dark" ? "theme-option active" : "theme-option"}><Moon size={16} /></span>
+            </span>
+          </button>
           <button ref={menuButton} className="site-menu-toggle" aria-label={menuOpen ? "Close navigation" : "Open navigation"} aria-expanded={menuOpen} aria-controls="site-menu" onClick={() => setMenuOpen(!menuOpen)}>
             {menuOpen ? <X size={24} /> : <Menu size={24} />}
           </button>

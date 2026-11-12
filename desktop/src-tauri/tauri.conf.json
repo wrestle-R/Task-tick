@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Task-tick",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "identifier": "com.tickanddone.desktop",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -34,6 +34,15 @@
       "icons/icon.png"
     ],
     "shortDescription": "Your todos and watchlist, within reach",
-    "category": "Productivity"
+    "category": "Productivity",
+    "createUpdaterArtifacts": true
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEZGNUIyM0I3NTlFQjJGMjUKUldRbEwrdFp0eU5iLytMeWJ3Z2NKSk1NZ0Fsd1EzWXNyR01vUW5FVmFBNGlKNzhveG5RT1Bxc2oK",
+      "endpoints": [
+        "https://task-tick-beige.vercel.app/api/updates/{{target}}/{{arch}}/{{current_version}}"
+      ]
+    }
   }
 }

@@ -16,6 +16,10 @@ try{
  browser=await chromium.launch({headless:true,executablePath:process.env.TICK_CHROMIUM_PATH??'/opt/google/chrome/chrome',args:['--no-sandbox']});
  const context=await browser.newContext({viewport:{width:1440,height:960}});const page=await context.newPage();
  const errors=[];page.on('pageerror',e=>errors.push(e.message));
+ if(process.env.TICK_TEST_MOVIES_API_BASE) await context.route('**/api/movies?*',async route=>{
+  const u=new URL(route.request().url());const response=await context.request.get(process.env.TICK_TEST_MOVIES_API_BASE+u.pathname+u.search,{headers:{Authorization:route.request().headers().authorization}});
+  await route.fulfill({response});
+ });
  await page.goto(base+'/app');await page.getByLabel('Email',{exact:true}).fill(email);await page.getByLabel('Password',{exact:true}).fill(password);await page.getByRole('button',{name:'Sign in',exact:true}).click();
  await page.getByRole('heading',{name:'Todos',exact:true}).waitFor();await page.getByLabel('New task',{exact:true}).fill('Online task');await page.getByRole('button',{name:'Add item',exact:true}).click();await page.getByRole('button',{name:'Online task',exact:true}).waitFor();
  await page.evaluate(async()=>{await navigator.serviceWorker.ready;if(!navigator.serviceWorker.controller)await new Promise(resolve=>navigator.serviceWorker.addEventListener('controllerchange',resolve,{once:true}));});
@@ -23,6 +27,10 @@ try{
  await context.setOffline(false);await page.getByRole('button',{name:/pending|Syncing|Up to date/}).first().click();await page.waitForFunction(()=>document.querySelector('.sync-indicator')?.textContent?.includes('Up to date'),{timeout:30000});
  const row=page.locator('.task-row').filter({has:page.getByRole('button',{name:'Offline task',exact:true})});await row.getByRole('button',{name:'Complete item'}).click();await page.getByRole('button',{name:'Undo',exact:true}).waitFor();await page.getByRole('button',{name:'Undo',exact:true}).click();await page.getByRole('button',{name:'Offline task',exact:true}).waitFor();
  await page.getByRole('button',{name:'Watchlist',exact:false}).first().click();await page.getByLabel('New movie or TV title',{exact:true}).fill('Manual TV title');await page.getByRole('button',{name:'Add item',exact:true}).click();await page.getByRole('button',{name:'Manual TV title',exact:true}).waitFor();
+ await page.getByLabel('New movie or TV title',{exact:true}).fill('Arrival');
+ await page.locator('.tmdb-results').getByRole('button').filter({hasText:'Arrival'}).first().waitFor().catch(async error=>{console.log('Capture value:',await page.getByLabel('New movie or TV title',{exact:true}).inputValue());console.log('Movie search error:',await page.locator('.error-banner').allTextContents());throw error;});
+ await page.locator('.tmdb-results').getByRole('button').filter({hasText:'Arrival'}).first().click();
+ await page.locator('.task-row').filter({hasText:'Arrival'}).first().waitFor();
  // Completed rows stay below unfinished rows instead of a separate filter tab.
  await page.getByRole('button',{name:'Todos',exact:true}).click();
  const completed=page.locator('.task-row').filter({has:page.getByRole('button',{name:'Online task',exact:true})});
@@ -40,5 +48,5 @@ try{
  assert.equal(await page.locator('.tick-sidebar').count(),0);
  await page.setViewportSize({width:390,height:844});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,'Mobile layout overflows horizontally');
  assert.deepEqual(errors,[],'Browser runtime errors');
- console.log('PASS: browser sign-in, online add, offline add + reload, reconnect sync, completion/Undo, manual watchlist, responsive layout, no runtime errors.');
+ console.log('PASS: browser sign-in, online add, offline add + reload, reconnect sync, completion/Undo, TMDB autocomplete, manual watchlist, combined Trash, completed grouping, responsive layout, no runtime errors.');
 }finally{if(browser)await browser.close();await db.query('delete from auth.users where id=$1',[id]);await db.end();console.log('Removed browser verification account/data.');}

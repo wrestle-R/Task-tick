@@ -10,6 +10,7 @@ jobs:
   linux:
     needs: checks
     runs-on: ubuntu-24.04
+    environment: native-release
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -20,12 +21,20 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf
       - run: npm ci
       - run: npm run tauri -w desktop -- build --bundles deb,appimage
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ''
+      - name: Stable download names
+        run: |
+          mkdir -p release-files
+          cp desktop/src-tauri/target/release/bundle/appimage/*.AppImage release-files/Task-tick-linux-x86_64.AppImage
+          cp desktop/src-tauri/target/release/bundle/appimage/*.AppImage.sig release-files/Task-tick-linux-x86_64.AppImage.sig
+          cp desktop/src-tauri/target/release/bundle/deb/*.deb release-files/Task-tick-linux-x86_64.deb
+          cp desktop/scripts/install-app.sh release-files/install-app.sh
       - uses: actions/upload-artifact@v4
         with:
           name: linux
-          path: |
-            desktop/src-tauri/target/release/bundle/deb/*.deb
-            desktop/src-tauri/target/release/bundle/appimage/*.AppImage
+          path: release-files/*
           if-no-files-found: error
   android:
     needs: checks
@@ -74,6 +83,10 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
@@ -84,6 +97,7 @@ jobs:
           RELEASE_TAG: ${{ github.ref_name }}
           RELEASE_REPO: ${{ github.repository }}
         run: |
+          node desktop/scripts/release-manifest.mjs artifacts
           cd artifacts
-          sha256sum *.apk *.deb *.AppImage > SHA256SUMS
+          sha256sum *.apk *.deb *.AppImage *.sig *.json *.sh > SHA256SUMS
           gh release create "$RELEASE_TAG" --repo "$RELEASE_REPO" --draft --title "Task-tick $RELEASE_TAG" --notes 'Build checks passed. Device, package installation and update acceptance must be recorded before publishing.' ./*

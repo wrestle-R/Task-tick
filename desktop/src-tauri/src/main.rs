@@ -16,10 +16,12 @@ use tauri::{
     tray::TrayIconBuilder,
     Manager, State,
 };
+use tauri_plugin_updater::UpdaterExt;
 struct Store {
     db: Mutex<Connection>,
     active: Mutex<Option<String>>,
     notification: Mutex<Option<u32>>,
+    search_session: Mutex<Option<(String, String)>>,
 }
 fn empty() -> Value {
     json!({"items":[],"outbox":[],"history":[],"cursor":0})
@@ -110,6 +112,7 @@ fn change_account(
 ) -> Result<(), String> {
     let mut active = store.active.lock().map_err(|e| e.to_string())?;
     *active = None;
+    *store.search_session.lock().map_err(|e| e.to_string())? = None;
     let mut current = store.notification.lock().map_err(|e| e.to_string())?;
     if let Some(id) = *current {
         notifications.close(id)?;
@@ -121,6 +124,63 @@ fn change_account(
 #[tauri::command]
 fn activate_account(account: Option<String>, store: State<Store>) -> Result<(), String> {
     change_account(&store, account, &DbusNotifications)
+}
+#[tauri::command]
+fn set_search_session(
+    account: Option<String>,
+    token: Option<String>,
+    store: State<Store>,
+) -> Result<(), String> {
+    // In-memory only. Never return this token through the sidebar socket.
+    let active = store.active.lock().map_err(|e| e.to_string())?;
+    if account != *active {
+        return Err("Account changed".into());
+    }
+    *store.search_session.lock().map_err(|e| e.to_string())? = account.zip(token);
+    Ok(())
+}
+fn search_movies(store: &Store, request: &Value) -> Result<Value, String> {
+    let account = store
+        .active
+        .lock()
+        .map_err(|e| e.to_string())?
+        .clone()
+        .ok_or("Sign in first")?;
+    if request["expectedAccount"].as_str() != Some(account.as_str()) {
+        return Err("Account changed".into());
+    }
+    let (owner, token) = store
+        .search_session
+        .lock()
+        .map_err(|e| e.to_string())?
+        .clone()
+        .ok_or("Open Task-tick to reconnect movie search")?;
+    if owner != account {
+        return Err("Account changed".into());
+    }
+    let query = request["query"].as_str().unwrap_or("").trim();
+    if query.chars().count() < 2 || query.chars().count() > 200 {
+        return Err("Enter a title between 2 and 200 characters".into());
+    }
+    let response = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(12))
+        .build()
+        .map_err(|_| "Movie search unavailable")?
+        .get("https://task-tick-beige.vercel.app/api/movies")
+        .query(&[("q", query)])
+        .bearer_auth(token)
+        .send()
+        .map_err(|_| "Movie search needs a connection")?;
+    if !response.status().is_success() {
+        return Err("Movie search unavailable. You can add the title manually.".into());
+    }
+    let result: Value = response
+        .json()
+        .map_err(|_| "Invalid movie search response")?;
+    if store.active.lock().map_err(|e| e.to_string())?.as_deref() != Some(account.as_str()) {
+        return Err("Account changed".into());
+    }
+    Ok(json!({"results":result["results"],"_account":account}))
 }
 #[tauri::command]
 fn get_reminders(store: State<Store>) -> Result<bool, String> {
@@ -224,6 +284,37 @@ fn notify_due_with(store: &Store, notifications: &impl Notifications) -> Result<
     }
     Ok(())
 }
+#[tauri::command]
+async fn check_update(app: tauri::AppHandle) -> Result<Option<String>, String> {
+    if std::env::var_os("APPIMAGE").is_none() {
+        return Ok(None);
+    }
+    Ok(app
+        .updater()
+        .map_err(|e| e.to_string())?
+        .check()
+        .await
+        .map_err(|e| e.to_string())?
+        .map(|u| u.version))
+}
+#[tauri::command]
+async fn install_update(app: tauri::AppHandle) -> Result<(), String> {
+    if std::env::var_os("APPIMAGE").is_none() {
+        return Err("Install the new package with your package manager.".into());
+    }
+    let update = app
+        .updater()
+        .map_err(|e| e.to_string())?
+        .check()
+        .await
+        .map_err(|e| e.to_string())?
+        .ok_or("No update available")?;
+    update
+        .download_and_install(|_, _| {}, || {})
+        .await
+        .map_err(|e| e.to_string())?;
+    app.restart();
+}
 fn socket_path() -> PathBuf {
     PathBuf::from(
         std::env::var("XDG_RUNTIME_DIR")
@@ -234,10 +325,11 @@ fn socket_path() -> PathBuf {
 fn ipc(store: &Store, request: Value) -> Result<Value, String> {
     // Keep the account boundary locked through this operation. A command from an
     // old sidebar view must never become an add/edit in a newly active account.
+    if request["action"] == "search" {
+        return search_movies(store, &request);
+    }
     let active = store.active.lock().map_err(|e| e.to_string())?;
-    let account = active
-        .clone()
-        .ok_or("Open Task-tick and sign in first")?;
+    let account = active.clone().ok_or("Open Task-tick and sign in first")?;
     let action = request["action"].as_str().unwrap_or("state");
     if action != "state" && request["expectedAccount"].as_str() != Some(account.as_str()) {
         return Err("Account changed. Refresh the sidebar and try again.".into());
@@ -263,7 +355,30 @@ fn ipc(store: &Store, request: Value) -> Result<Value, String> {
         if title.is_empty() || title.chars().count() > 500 {
             return Err("Enter a title".into());
         }
-        patch = json!({"title":title});
+        let mut value = json!({"title":title});
+        if kind == "movie" && request["tmdbId"].as_u64().is_some() {
+            let media = request["mediaType"]
+                .as_str()
+                .filter(|m| *m == "movie" || *m == "tv")
+                .ok_or("Invalid media type")?;
+            if let Some(existing) = state["items"].as_array().unwrap().iter().find(|i| {
+                i["kind"] == "movie"
+                    && i["deletedAt"].is_null()
+                    && i["tmdbId"] == request["tmdbId"]
+                    && i["mediaType"] == media
+            }) {
+                return Ok(json!({"existingId":existing["id"],"_account":account}));
+            }
+            value["tmdbId"] = request["tmdbId"].clone();
+            value["mediaType"] = json!(media);
+            if let Some(poster) = request["poster"]
+                .as_str()
+                .filter(|p| p.starts_with('/') && p.len() < 200)
+            {
+                value["poster"] = json!(poster);
+            }
+        }
+        patch = value;
     } else if action == "toggle" {
         let item = state["items"]
             .as_array()
@@ -330,12 +445,12 @@ fn main() {
         }
         return;
     }
-    tauri::Builder::default().plugin(tauri_plugin_single_instance::init(|app,_,_|{if let Some(w)=app.get_webview_window("main"){w.show().ok();w.set_focus().ok();}}))
- .invoke_handler(tauri::generate_handler![get_state,save_state,activate_account,get_reminders,set_reminders])
+    tauri::Builder::default().plugin(tauri_plugin_updater::Builder::new().build()).plugin(tauri_plugin_single_instance::init(|app,_,_|{if let Some(w)=app.get_webview_window("main"){w.show().ok();w.set_focus().ok();}}))
+ .invoke_handler(tauri::generate_handler![get_state,save_state,activate_account,get_reminders,set_reminders,set_search_session,check_update,install_update])
  .setup(|app|{
   let dir=app.path().app_data_dir()?;std::fs::create_dir_all(&dir)?;std::fs::set_permissions(&dir,std::fs::Permissions::from_mode(0o700))?;
   let db=Connection::open(dir.join("tick.sqlite3"))?;db.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; CREATE TABLE IF NOT EXISTS accounts(id TEXT PRIMARY KEY,value TEXT NOT NULL); CREATE TABLE IF NOT EXISTS reminders(account TEXT PRIMARY KEY,enabled INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS notified(account TEXT NOT NULL,id TEXT NOT NULL,due_at TEXT NOT NULL,PRIMARY KEY(account,id));")?;
-  app.manage(Store{db:Mutex::new(db),active:Mutex::new(None),notification:Mutex::new(None)});
+  app.manage(Store{db:Mutex::new(db),active:Mutex::new(None),notification:Mutex::new(None),search_session:Mutex::new(None)});
   if std::env::args().any(|a|a=="--background"){if let Some(window)=app.get_webview_window("main"){window.hide().ok();}}
   let show=MenuItem::with_id(app,"show","Open Task-tick",true,None::<&str>)?;let quit=MenuItem::with_id(app,"quit","Quit",true,None::<&str>)?;let menu=Menu::with_items(app,&[&show,&quit])?;
   TrayIconBuilder::with_id("tick-and-done").icon(tauri::image::Image::from_bytes(include_bytes!("../icons/icon.png"))?).tooltip("Task-tick").menu(&menu).on_menu_event(|app,event|{if event.id.as_ref()=="quit"{app.exit(0)}else if let Some(w)=app.get_webview_window("main"){w.show().ok();w.set_focus().ok();}}).build(app)?;
@@ -358,7 +473,29 @@ mod tests {
             db: Mutex::new(db),
             active: Mutex::new(Some("account-a".into())),
             notification: Mutex::new(None),
+            search_session: Mutex::new(None),
         }
+    }
+    #[test]
+    fn movie_identity_is_preserved_and_duplicates_do_not_enqueue() {
+        let store = store();
+        let first=ipc(&store,json!({"action":"add","expectedAccount":"account-a","kind":"movie","title":"Sample film","tmdbId":123,"mediaType":"movie","poster":"/sample.jpg"})).unwrap();
+        assert_eq!(first["items"][0]["tmdbId"], 123);
+        assert_eq!(first["items"][0]["poster"], "/sample.jpg");
+        let again=ipc(&store,json!({"action":"add","expectedAccount":"account-a","kind":"movie","title":"Same film","tmdbId":123,"mediaType":"movie"})).unwrap();
+        assert_eq!(again["existingId"], first["items"][0]["id"]);
+        let saved = ipc(&store, json!({"action":"state"})).unwrap();
+        assert_eq!(saved["outbox"].as_array().unwrap().len(), 1);
+        assert!(ipc(
+            &store,
+            json!({"action":"search","expectedAccount":"other","query":"Film"})
+        )
+        .is_err());
+        assert!(ipc(
+            &store,
+            json!({"action":"search","expectedAccount":"account-a","query":"Film"})
+        )
+        .is_err());
     }
     #[test]
     fn sidebar_completion_queues_parent_and_children_atomically() {
@@ -493,9 +630,7 @@ mod tests {
     #[ignore = "requires an authorized live desktop notification service"]
     fn desktop_notification_service_roundtrip() {
         let notifications = DbusNotifications;
-        let id = notifications
-            .show(0, "Task-tick reminder check")
-            .unwrap();
+        let id = notifications.show(0, "Task-tick reminder check").unwrap();
         assert!(id > 0);
         notifications.close(id).unwrap();
     }
