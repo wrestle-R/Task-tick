@@ -113,3 +113,13 @@ Live evidence: installed native IPC returned 17 Arrival search results; actual s
 Release source adds a Linux AppImage updater with an embedded public signing key, private key stored outside Git and configured in GitHub's native-release environment, plus Android checksum-verified APK download into the system installer. Version0.2.0/code5 debug and production Linux deb/AppImage/signatures build locally. Release endpoints return no release/HTTP204 while none is published; drafts are never updates. Update installation against a later published release remains unverified. Native macOS/Windows packages are not published; those platforms use the web app.
 
 The README now links the download page and provides a Task-tick-specific checksum-verifying installer, a fixture-only actual sidebar screenshot and a detailed cross-platform reproduction prompt. The approved public landing page was restored unchanged after the user's correction.
+
+## Event-driven sync 0.2.1, 2026-11-12
+
+Supabase Realtime now signals owner-filtered changes on the two existing lists. Web and desktop run authoritative cursor sync on events and subscription/reconnection, replacing their15-second server polling. Hints arriving during a sync request another pass. Existing native storage, mutation IDs and account conflict rules remain unchanged.
+
+Android0.2.1/code6 includes Firebase Messaging. An authenticated device registration endpoint stores account-scoped tokens under RLS. Accepted writes schedule normal-priority, collapsible FCM data hints after the HTTP response; hints carry no task content. The receiver checks the current account and schedules native sync/widgets. Token rotation and daily registration retry are supported. Missed hints recover on reopen/reconnect and through existing Android retry jobs; background delivery can be delayed by Android. Push is best-effort, not a durable event queue.
+
+The Firebase Android registration was corrected to the installed package `com.tickanddone`, preserving installed data. Service credentials stay outside Git and client bundles. Server environment configuration is synced to Varte; native client configuration is injected through a GitHub secret.
+
+Verified: deployed two-client event-driven add/reverse-completion/delete without manual sync or focus changes; rollback-tested device-token account isolation;13 core tests; workspace/app typechecks; Android preview compile and data-preserving phone update;5 Rust tests; signed Linux deb/AppImage packaging. Actual phone FCM/background acceptance is pending unlock. Public-release readiness is not claimed by these build results.
