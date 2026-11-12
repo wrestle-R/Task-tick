@@ -1,6 +1,6 @@
 [package]
 name = "tick-and-done"
-version = "0.2.2"
+version = "0.2.3"
 description = "An offline-first home for todos and your watchlist"
 edition = "2021"
 

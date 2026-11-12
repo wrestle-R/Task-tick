@@ -14,7 +14,7 @@ use std::{
 use tauri::{
     menu::{Menu, MenuItem},
     tray::TrayIconBuilder,
-    Emitter, Manager, State,
+    Manager, State,
 };
 use tauri_plugin_updater::UpdaterExt;
 struct Store {
@@ -456,7 +456,7 @@ fn main() {
   TrayIconBuilder::with_id("tick-and-done").icon(tauri::image::Image::from_bytes(include_bytes!("../icons/icon.png"))?).tooltip("Task-tick").menu(&menu).on_menu_event(|app,event|{if event.id.as_ref()=="quit"{app.exit(0)}else if let Some(w)=app.get_webview_window("main"){w.show().ok();w.set_focus().ok();}}).build(app)?;
   let path=socket_path();if path.exists(){std::fs::remove_file(&path)?}let listener=UnixListener::bind(&path)?;std::fs::set_permissions(&path,std::fs::Permissions::from_mode(0o600))?;let handle=app.handle().clone();
   let reminders=app.handle().clone();std::thread::spawn(move||loop{std::thread::sleep(std::time::Duration::from_secs(30));let _=notify_due(&reminders.state::<Store>());});
-  std::thread::spawn(move||{for stream in listener.incoming().flatten(){stream.set_read_timeout(Some(std::time::Duration::from_secs(2))).ok();let mut reader=BufReader::new(stream);let mut line=String::new();use std::io::Read;let read=reader.by_ref().take(65536).read_line(&mut line);let response=if read.is_ok(){serde_json::from_str::<Value>(&line).map_err(|e|e.to_string()).and_then(|request|{let changed=request["action"].as_str().unwrap_or("state")!="state";let result=ipc(&handle.state::<Store>(),request);if changed&&result.is_ok(){handle.emit("tick-store-changed",()).ok();}result})}else{Err("Invalid request".into())};let output=response.unwrap_or_else(|e|json!({"error":e}));writeln!(reader.get_mut(),"{}",output).ok();}});
+  std::thread::spawn(move||{for stream in listener.incoming().flatten(){stream.set_read_timeout(Some(std::time::Duration::from_secs(2))).ok();let mut reader=BufReader::new(stream);let mut line=String::new();use std::io::Read;let read=reader.by_ref().take(65536).read_line(&mut line);let response=if read.is_ok(){serde_json::from_str::<Value>(&line).map_err(|e|e.to_string()).and_then(|request|{let changed=request["action"].as_str().unwrap_or("state")!="state";let result=ipc(&handle.state::<Store>(),request);if changed&&result.is_ok(){if let Some(window)=handle.get_webview_window("main"){window.eval("window.dispatchEvent(new Event('tick-native-change'))").ok();}}result})}else{Err("Invalid request".into())};let output=response.unwrap_or_else(|e|json!({"error":e}));writeln!(reader.get_mut(),"{}",output).ok();}});
   Ok(())
  }).on_window_event(|window,event|{if let tauri::WindowEvent::CloseRequested{api,..}=event{api.prevent_close();window.hide().ok();}})
  .run(tauri::generate_context!()).expect("Unable to start Task-tick");
