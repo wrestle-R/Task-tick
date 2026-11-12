@@ -1,3 +1,4 @@
+import { listen } from "@tauri-apps/api/event";
 import React from "react";
 import { createRoot } from "react-dom/client";
 import { invoke } from "@tauri-apps/api/core";
@@ -24,6 +25,7 @@ const shareSession = (
     account: session?.user.id ?? null,
     token: session?.access_token ?? null,
   });
+void listen("tick-store-changed", () => window.dispatchEvent(new Event("tick-native-change")));
 createRoot(document.getElementById("root")!).render(
   <Workspace
     storage={storage}

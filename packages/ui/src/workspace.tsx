@@ -350,10 +350,12 @@ export function Workspace({
       .on('postgres_changes', {event:'*',schema:'public',table:'movies-todo',filter:`user_id=eq.${session.user.id}`}, () => void sync())
       .subscribe(status => { if(status === 'SUBSCRIBED') void sync(); }) : null;
     const onFocus = () => void sync();
+    window.addEventListener("tick-native-change", onFocus);
     window.addEventListener("online", onFocus);
     window.addEventListener("focus", onFocus);
     return () => {
       if(channel) void client!.removeChannel(channel);
+      window.removeEventListener("tick-native-change", onFocus);
       window.removeEventListener("online", onFocus);
       window.removeEventListener("focus", onFocus);
     };
