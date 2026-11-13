@@ -1,3 +1,13 @@
+## Security release0.2.4, 2026-11-13
+
+Source9a8c179/tagv0.2.4 passed main checks43376008988 and release43376012476. All six exact CI artifact checksums passed, production APK signature verified, and the AppImage signature matched the embedded public key. Exact Debian package install/library/startup/protected IPC passed in Ubuntu24.04. The installed exact CI AppImage passed sidebar IPC add→deployed web, web completion→native, and web deletion→native with cleanup to Trash. Owner account retained.
+
+Phone0.2.4/code9 self-contained preview updated its existing development-signed installation with `-r`, preserving its identity; the production APK uses a different key and was not forced onto that phone. On the isolated production-signed emulator, exact CI APK same-certificate update0.2.3→0.2.4 succeeded and metadata reported code9; installation time remained2026-11-11. The metadata check initially referenced obsolete userId instead of appId, so it does not establish a before/after app-ID assertion. GUI smoke could not finish: physical phone session busy; isolated emulator System UI ANR persisted after the one recovery attempt. No new GUI/widget/reminder claims are made.
+
+Security evidence: root dependency audit0; mobile moderate glob advisory resolved, nine low upstream dependency-chain entries remain for the locally patched deepmerge advisory with exploit/compatibility regressions. Core13, nativeRust6(1 live test ignored), TS/builds, clean mobile install/config/Android builds, database protocol/pagination/RLS and push-isolation tests pass. Missing/forged JWT rejection and deployed browser security headers pass. No password rotation or shared-project auth policy changes. Details: `docs/security.md`.
+
+Sidebar persistence is committed/applied in dots-hyprland12d4d536 and Linuxde3dd7f, with documentation followups. Guarded installer20tests passed, live preflight0changes, fetched end-4main ancestor verified. Approved live QML reconciled with the Task-tick installer manifest after preserving its backup. Pacman reports official packages current; yay-built Darkly0.5.44/Zen1.24.2b installed; no remaining upgrades reported. No env files changed.
+
 The exact CI-built v0.2.0 Debian package also passed installation, dynamic-library resolution, native startup and account-protected IPC in a disposable Ubuntu24.04/Xvfb/D-Bus container. The repeatable check is `docs/tests/linux-package.sh`. Container desktop-portal warnings do not substitute for a real desktop notification test.
 
 ## Phone loading repair and final delivery evidence
