@@ -22,7 +22,7 @@ FocusScope {
     readonly property var finished: (state.items || []).filter(i => i.kind === root.kind && i.done && !i.deletedAt && !i.parentId).sort((a,b) => Date.parse(b.updatedAt)-Date.parse(a.updatedAt))
     readonly property int completedSlots: Math.max(0, Math.floor(rows.height / 38) - unfinished.length - 1)
     readonly property var items: unfinished.concat(finished.slice(0, completedSlots))
-    function focusActiveItem() { if (connected) input.forceActiveFocus(); else legacy.item?.focusActiveItem(); }
+    function focusActiveItem() { if (connected) input.forceActiveFocus();  }
     function refresh() { if (!read.running) { read.command = [executable, "--ipc", JSON.stringify({action:"state"})]; read.running = true; } }
     function mutate(value) { if (write.running) return; value.expectedAccount = root.state._account; write.command = [executable, "--ipc", JSON.stringify(value)]; write.running = true; }
     function addManual() { if(input.text.trim() && !write.running){mutate({action:"add",kind:kind,title:input.text.trim()});input.text="";suggestions=[];} }
@@ -50,7 +50,7 @@ FocusScope {
         onExited: {if(input.text.trim()!==root.searchedText) searchDelay.restart();}
     }
     Process { id: playback; command:["python3",Quickshell.env("HOME")+"/.local/lib/tick-and-done/spotify.py","toggle"] }
-    Loader { id: legacy; anchors.fill: parent; active: !root.connected; sourceComponent: SidebarDashboard {} }
+    StyledText { anchors.centerIn: parent; visible: !root.connected; text: "Open Task-tick and sign in to connect your lists."; wrapMode: Text.Wrap; width: parent.width - 40; horizontalAlignment: Text.AlignHCenter; color: Appearance.colors.colSubtext }
     ColumnLayout {
         anchors.fill: parent; anchors.margins: 14; spacing: 12; visible: root.connected
         HyprTrackSummary { Layout.fillWidth: true; Layout.maximumHeight: implicitHeight; active: root.active && root.visible }

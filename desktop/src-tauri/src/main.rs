@@ -44,11 +44,25 @@ fn save(db: &Connection, account: &str, value: &Value) -> Result<(), String> {
 }
 #[tauri::command]
 fn get_state(account: String, store: State<Store>) -> Result<Value, String> {
+    read_active(&store, &account)
+}
+fn read_active(store: &Store, account: &str) -> Result<Value, String> {
+    let active = store.active.lock().map_err(|e| e.to_string())?;
+    if active.as_deref() != Some(account) {
+        return Err("Account changed. Reload the list.".into());
+    }
     let db = store.db.lock().map_err(|e| e.to_string())?;
-    load(&db, &account)
+    load(&db, account)
 }
 #[tauri::command]
 fn save_state(account: String, value: Value, store: State<Store>) -> Result<(), String> {
+    write_active(&store, &account, value)
+}
+fn write_active(store: &Store, account: &str, value: Value) -> Result<(), String> {
+    let active = store.active.lock().map_err(|e| e.to_string())?;
+    if active.as_deref() != Some(account) {
+        return Err("Account changed. Reload the list.".into());
+    }
     if value.get("items").and_then(Value::as_array).is_none()
         || value.get("outbox").and_then(Value::as_array).is_none()
     {
@@ -475,6 +489,17 @@ mod tests {
             notification: Mutex::new(None),
             search_session: Mutex::new(None),
         }
+    }
+    #[test]
+    fn stale_storage_reads_and_writes_are_rejected() {
+        let store = store();
+        assert!(read_active(&store, "account-a").is_ok());
+        assert!(write_active(&store, "account-a", empty()).is_ok());
+        *store.active.lock().unwrap() = Some("account-b".into());
+        assert!(read_active(&store, "account-a").is_err());
+        assert!(write_active(&store, "account-a", empty()).is_err());
+        *store.active.lock().unwrap() = None;
+        assert!(read_active(&store, "account-b").is_err());
     }
     #[test]
     fn movie_identity_is_preserved_and_duplicates_do_not_enqueue() {
