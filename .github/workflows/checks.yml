@@ -59,6 +59,7 @@ jobs:
             printf '%s' "$FIREBASE_CONFIG" > app/android/app/google-services.json
           fi
       - run: npm ci --prefix app
+      - run: node --test app/scripts/security.test.cjs
       - run: npx --prefix app tsc --noEmit -p app/tsconfig.json
       - name: Create disposable debug signing key
         run: keytool -genkeypair -noprompt -keystore app/android/app/debug.keystore -storepass android -keypass android -alias androiddebugkey -dname 'CN=Android Debug,O=Android,C=US' -keyalg RSA -keysize 2048 -validity 10000

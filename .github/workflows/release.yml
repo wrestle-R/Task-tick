@@ -64,6 +64,7 @@ jobs:
             printf '%s' "$FIREBASE_CONFIG" > app/android/app/google-services.json
           fi
       - run: npm ci --prefix app
+      - run: node --test app/scripts/security.test.cjs
       - name: Restore signing identity
         env:
           KEYSTORE: ${{ secrets.TICK_ANDROID_KEYSTORE_BASE64 }}

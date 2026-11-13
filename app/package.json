@@ -1,6 +1,6 @@
 {
   "name": "task-tick-mobile",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "private": true,
   "scripts": {
     "android": "react-native run-android",
@@ -8,7 +8,8 @@
     "lint": "eslint .",
     "start": "react-native start",
     "test": "jest",
-    "android:preview": "cd android && ./gradlew :app:assemblePreview"
+    "android:preview": "cd android && ./gradlew :app:assemblePreview",
+    "postinstall": "node scripts/harden-deepmerge.cjs"
   },
   "dependencies": {
     "react": "19.3.0",
@@ -39,5 +40,8 @@
   },
   "engines": {
     "node": ">= 22.11.0"
+  },
+  "overrides": {
+    "minimatch@>=7.0.0 <11.0.1": "11.0.8"
   }
 }

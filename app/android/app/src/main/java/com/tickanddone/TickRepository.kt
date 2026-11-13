@@ -44,7 +44,7 @@ class TickRepository private constructor(private val context: Context) : SQLiteO
  private fun request(url:String,body:JSONObject?=null,token:String?=null,key:String?=null):JSONObject {
   val con=URL(url).openConnection() as HttpURLConnection;con.connectTimeout=15000;con.readTimeout=20000;con.setRequestProperty("Content-Type","application/json");if(token!=null)con.setRequestProperty("Authorization","Bearer $token");if(key!=null)con.setRequestProperty("apikey",key)
   if(body!=null){con.requestMethod="POST";con.doOutput=true;con.outputStream.use{it.write(body.toString().toByteArray())}}
-  try{val code=con.responseCode;val text=(if(code in 200..299)con.inputStream else con.errorStream)?.bufferedReader()?.use{it.readText()}?:"{}";val result=JSONObject(text);if(code !in 200..299)throw IllegalStateException(result.optString("error_description",result.optString("msg",result.optString("error","Request failed ($code)"))));return result}finally{con.disconnect()}
+  try{val code=con.responseCode;val text=(if(code in 200..299)con.inputStream else con.errorStream)?.bufferedReader()?.use{it.readText()}?:"{}";val result=JSONObject(text.ifBlank{"{}"});if(code !in 200..299)throw IllegalStateException(result.optString("error_description",result.optString("msg",result.optString("error","Request failed ($code)"))));return result}finally{con.disconnect()}
  }
  fun authenticate(mode:String,email:String,password:String,api:String):String {
   val attempt=synchronized(this){++authGeneration}
@@ -66,7 +66,21 @@ class TickRepository private constructor(private val context: Context) : SQLiteO
   check(account()==owner&&authGeneration==generation){"Account changed. Sign in to sync."};return s.getString("access_token")
  }
 
- fun logout(){synchronized(this){authGeneration++;context.getSystemService(JobScheduler::class.java).apply{cancel(100);cancel(101)};context.getSystemService(android.app.NotificationManager::class.java).cancel(201);prefs.edit().remove("account").remove("email").remove("session").commit()};Widgets.refresh(context);Reminders.schedule(context)}
+ fun logout(){
+  val revoke=synchronized(this){
+   val token=runCatching{session().optString("access_token")}.getOrNull()
+   val url=prefs.getString("supabase",null);val clientKey=prefs.getString("clientKey",null)
+   authGeneration++;context.getSystemService(JobScheduler::class.java).apply{cancel(100);cancel(101)}
+   context.getSystemService(android.app.NotificationManager::class.java).cancel(201)
+   check(prefs.edit().remove("account").remove("email").remove("session").commit()){"Could not sign out"}
+   Triple(url,clientKey,token)
+  }
+  Widgets.refresh(context);Reminders.schedule(context)
+  // Offline sign-out remains immediate; revoke only this captured device session.
+  if(online()&&!revoke.first.isNullOrEmpty()&&!revoke.third.isNullOrEmpty())Thread{
+   try{request("${revoke.first}/auth/v1/logout?scope=local",JSONObject(),revoke.third,revoke.second)}catch(_:Exception){}
+  }.start()
+ }
  private fun defaultItem(id:String,kind:String)=JSONObject().put("id",id).put("kind",kind).put("title","").put("done",false).put("notes","").put("priority",0).put("dueAt",JSONObject.NULL).put("parentId",JSONObject.NULL).put("position",System.currentTimeMillis()).put("rating",JSONObject.NULL).put("mediaType",JSONObject.NULL).put("tmdbId",JSONObject.NULL).put("poster",JSONObject.NULL).put("deletedAt",JSONObject.NULL)
  private fun patchItem(s:JSONObject,id:String,kind:String,patch:JSONObject,action:String="patch"){
   val items=s.getJSONArray("items");var target:JSONObject?=null;for(i in 0 until items.length()){val item=items.getJSONObject(i);if(item.getString("id")==id){target=item;break}}
