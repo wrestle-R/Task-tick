@@ -1,6 +1,6 @@
 # Sidebar integration contract
 
-Use the copy-paste prompt in the root README alongside its screenshot. The source contract takes precedence over this explanation when adding protocol versions. Never point a third-party panel directly at the primary database tables.
+Use the [copy-paste prompt below](#sidebar-implementation-prompt) alongside the [sidebar screenshot](images/sidebar.png). The source contract takes precedence over this explanation when adding protocol versions. Never point a third-party panel directly at the primary database tables.
 
 ## Visual and lifecycle requirements
 
@@ -72,3 +72,76 @@ No browser or panel needs the Supabase database password, management token or se
 A local edit and its outgoing mutation must commit atomically. A crash before commit changes neither; after commit both survive. Different fields merge; same-field conflicts use server acceptance order. Deletion wins over stale edits. Seven-day recovery/trash is independent of sync tombstone retention. Parent completion completes children atomically. Sign-out hides data and retains pending work for that same account unless explicitly discarded.
 
 Test two accounts, network loss, restart, timeout replay, stale-account clicks and a long list. Use fixtures in public screenshots. Scope music keys to the empty input; typing a task with spaces must continue working. Do not claim reboot/music queue recovery or native macOS/Windows panel support without testing those platforms.
+
+## Sidebar implementation prompt
+
+```text
+Build a Task-tick sidebar for my existing operating system and desktop setup.
+Repository: https://github.com/wrestle-R/Task-tick
+Backend: https://task-tick-beige.vercel.app
+Reference screenshot: https://raw.githubusercontent.com/wrestle-R/Task-tick/main/docs/images/sidebar.png
+Read docs/sidebar-integration.md, docs/architecture.md, packages/core/src/index.ts
+and desktop/hyprland/TickDashboard.qml from that repository before coding.
+
+First inspect my OS, desktop shell, panel framework, theme, existing shortcuts and
+startup files. Preserve my existing panels and apps. Back up affected files and
+make installation reversible. If my OS is not Linux, do not run Linux/Hyprland
+commands: select a native panel mechanism for my OS and explain its limitations.
+
+Visual layout, from top to bottom:
+- Keep existing unrelated status/music panels in place.
+- A small Task-tick header with unfinished count.
+- Two compact theme-colored segments, Todos and Movies. Default to Todos every
+  time the sidebar opens. No separate Completed tab.
+- One compact add input with a small + button. Movies suggests film/TV titles
+  from TMDB after 350ms and two typed characters; manual entry remains available.
+- Compact unfinished rows ordered by position ascending, UUID as tie-breaker.
+  New entries append at the bottom unless the user explicitly reorders them.
+- Completed rows below unfinished rows, newest completions first. Only show as
+  many as fit in spare panel space. Hide older completed rows from the panel;
+  never delete, trash, or mutate those rows just to make the panel fit.
+- Subtle saved/pending/error status. Match my panel's typography, roundness,
+  colors and spacing. No stock black text fields or rectangular Qt buttons.
+- No poster images in this small sidebar. Use posters in roomy app views only.
+
+On Linux with Task-tick running, prefer its local store. The CLI reads/writes
+one JSON request via: task-tick --ipc '<JSON>' (the optional Hyprland installer
+uses the compatibility name tick-and-done). Detect which launcher is installed.
+Read state with
+{"action":"state"}; it returns items, outbox and _account. Every subsequent
+write/search MUST include expectedAccount equal to that returned _account.
+Add: {"action":"add","kind":"todo","title":"Buy coffee","expectedAccount":"UUID"}.
+Toggle: {"action":"toggle","kind":"todo","id":"ITEM_UUID","expectedAccount":"UUID"}.
+Search: {"action":"search","query":"Arrival","expectedAccount":"UUID"}.
+For a selected movie result, add kind movie with title, tmdbId, mediaType
+(movie or tv), and poster path. Duplicate TMDB entries return existingId.
+Never read or write the SQLite file directly. Never expose session tokens in
+commands, logs or screenshots. The local CLI does not return credentials.
+
+For other platforms without the native store, implement an account-isolated
+local store/outbox using the shared core protocol. GET /api/config returns the
+publishable Supabase URL/key. Use Supabase email/password authentication and
+refresh sessions normally. POST /api/sync uses Authorization: Bearer USER_TOKEN
+and Content-Type: application/json. Reuse collectSyncPages/reconcile from the
+core; do not hand-roll pagination or generate new mutation IDs on retries.
+GET /api/movies?q=TITLE uses the same user Bearer token. No TMDB secret belongs
+in the sidebar. Read the full contract for complete protocol examples.
+
+Persist edits and outbox in one local transaction before showing success.
+Isolate accounts; a pending request from A must never write into B. Preserve
+unsynced edits for the same account on logout. Respect deletion-wins, field
+merges, server acceptance ordering and seven-day Trash/recovery. Never hardcode
+my login or request privileged database/service-role keys.
+
+Bind Space to my existing Spotify toggle ONLY when the capture field is empty;
+otherwise type an ordinary space. Scope this to the sidebar, never globally
+intercept Space. Keep my existing global music shortcut intact. If my player
+cannot restore its queue, report that limitation without inventing a queue.
+
+Verify: offline add survives restart; reconnect creates one server item;
+completion moves down; overflow hides old completed rows without deleting;
+Movies autocomplete and manual add both work; duplicate TMDB entries reuse;
+account switching clears old content; stale actions fail; empty-input Space
+controls music, text-input Space types; install/uninstall preserves my setup.
+Show me screenshots with sample data and report checks and remaining limits.
+```

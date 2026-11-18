@@ -24,6 +24,7 @@ import java.time.Instant
 class TickRepository private constructor(private val context: Context) : SQLiteOpenHelper(context,"tick.sqlite3",null,1) {
  companion object { @Volatile private var instance:TickRepository?=null; fun get(c:Context)=instance?:synchronized(this){instance?:TickRepository(c.applicationContext).also{instance=it}} }
  private val syncLock=Any()
+ private val tokenLock=Any()
  @Volatile private var authGeneration=0L
  private val prefs=context.getSharedPreferences("tick-settings",Context.MODE_PRIVATE)
  override fun onCreate(db:SQLiteDatabase){db.execSQL("CREATE TABLE accounts(id TEXT PRIMARY KEY,state TEXT NOT NULL)")}
@@ -57,13 +58,13 @@ class TickRepository private constructor(private val context: Context) : SQLiteO
   if(response.has("access_token")){synchronized(this){check(authGeneration==attempt){"Sign-in changed. Try again."};context.getSystemService(android.app.NotificationManager::class.java).cancel(201);writeSession(response);prefs.edit().putString("account",response.getJSONObject("user").getString("id")).putString("email",email).commit()};scheduleSync();Widgets.refresh(context);Reminders.schedule(context);return "Signed in"}
   return if(mode=="reset")"Check your email for a password reset link." else "Check your email to verify your account, then sign in."
  }
- private fun accessToken():String {
+ private fun accessToken():String = synchronized(tokenLock) {
   val (owner,generation,saved)=synchronized(this){Triple(account()?:throw IllegalStateException("Sign in to sync"),authGeneration,session())};var s=saved
   if(s.optLong("expires_at",0)<System.currentTimeMillis()/1000+60){
    s=request("${prefs.getString("supabase","")}/auth/v1/token?grant_type=refresh_token",JSONObject().put("refresh_token",s.getString("refresh_token")),key=prefs.getString("clientKey",null))
    synchronized(this){check(account()==owner&&authGeneration==generation){"Account changed. Sign in to sync."};writeSession(s)}
   }
-  check(account()==owner&&authGeneration==generation){"Account changed. Sign in to sync."};return s.getString("access_token")
+  check(account()==owner&&authGeneration==generation){"Account changed. Sign in to sync."};s.getString("access_token")
  }
 
  fun logout(){
@@ -100,6 +101,21 @@ class TickRepository private constructor(private val context: Context) : SQLiteO
    val items=s.getJSONArray("items");val existing=(0 until items.length()).map{items.getJSONObject(it)}.find{it.getString("id")==id}
    if(existing==null){require(action=="patch"&&m.optBoolean("create")&&patch.has("title")&&id.length==36&&UUID.fromString(id).toString()==id){"This item is no longer available. Refresh your list."}}
    else require(existing.getString("kind")==kind){"This item belongs to a different list"}
+  }
+  if (action == "patch" && patch.has("tmdbId") && kind == "movie") {
+   val items = s.getJSONArray("items")
+   val existing = (0 until items.length()).map { items.getJSONObject(it) }.find {
+    it.optString("id") != id && it.optString("kind") == "movie" && it.isNull("deletedAt") &&
+     it.optLong("tmdbId", -1) == patch.getLong("tmdbId") && it.optString("mediaType") == patch.getString("mediaType")
+   }
+   if (existing != null) return snapshot().put("existingId", existing.getString("id"))
+  }
+  if (patch.has("parentId") && !patch.isNull("parentId")) {
+   val items = s.getJSONArray("items")
+   require((0 until items.length()).map { items.getJSONObject(it) }.any {
+    it.optString("id") == patch.getString("parentId") && it.optString("kind") == "todo" &&
+     it.isNull("deletedAt") && it.isNull("parentId")
+   }) { "This task is no longer available." }
   }
   if(patch.has("title"))require(patch.getString("title").trim().isNotEmpty()&&patch.getString("title").length<=500){"Enter a title (up to 500 characters)"}
   if(action=="undo"){
@@ -183,5 +199,15 @@ class TickRepository private constructor(private val context: Context) : SQLiteO
  }
  fun posterFile(path:String):java.io.File=java.io.File(context.cacheDir,"posters/"+java.security.MessageDigest.getInstance("SHA-256").digest(path.toByteArray()).joinToString(""){"%02x".format(it)}+".jpg")
  private fun cachePosters(){val items=read().getJSONArray("items");var fetched=0;for(i in 0 until items.length()){val item=items.getJSONObject(i);val path=item.optString("poster");if(item.optString("kind")!="movie"||!path.matches(Regex("^/[a-zA-Z0-9._-]+$")))continue;val file=posterFile(path);if(file.exists()||fetched>=10)continue;try{val con=URL("https://image.tmdb.org/t/p/w92$path").openConnection() as HttpURLConnection;con.connectTimeout=3000;con.readTimeout=3000;val data=con.inputStream.use{it.readNBytes(600000)};con.disconnect();if(data.isNotEmpty()&&data.size<600000){file.parentFile?.mkdirs();val temp=java.io.File(file.path+".tmp");temp.writeBytes(data);temp.renameTo(file);fetched++}}catch(_:Exception){}};if(fetched>0)Widgets.refresh(context)}
- fun search(q:String):JSONObject=request("${backend()}/api/movies?q=${java.net.URLEncoder.encode(q,"UTF-8")}",token=accessToken())
+ fun search(q: String, expectedAccount: String): JSONObject {
+  val generation = synchronized(this) {
+   check(account() == expectedAccount) { "Account changed. Open your list again." }
+   authGeneration
+  }
+  val token = accessToken()
+  check(account() == expectedAccount && authGeneration == generation) { "Account changed. Open your list again." }
+  val result = request("${backend()}/api/movies?q=${java.net.URLEncoder.encode(q, "UTF-8")}", token = token)
+  check(account() == expectedAccount && authGeneration == generation) { "Account changed. Open your list again." }
+  return result
+ }
 }

@@ -271,7 +271,7 @@ export function Workspace({
     [storage],
   );
   const sync = useCallback(async () => {
-    if (!session || !config || !ready || !navigator.onLine) return;
+    if (!session || !config || !ready || (!desktop && !navigator.onLine)) return;
     if (syncLock.current) { syncRequested.current = true; return; }
     syncLock.current = true;
     setSyncing(true);
@@ -282,6 +282,7 @@ export function Workspace({
       if (account !== accountRef.current) return;
       stateRef.current = fresh;
       setState(fresh);
+      if (!navigator.onLine) return;
       const pending = fresh.outbox;
       const { data: auth } = await client!.auth.getSession();
       if (account !== accountRef.current) return;
@@ -340,7 +341,7 @@ export function Workspace({
       setSyncing(false);
       if (syncRequested.current) { syncRequested.current = false; setTimeout(() => void sync(), 0); }
     }
-  }, [session, config, ready, client, change]);
+  }, [session, config, ready, client, change, desktop, storage]);
   useEffect(() => {
     if (!ready) return;
     void sync();
@@ -350,16 +351,19 @@ export function Workspace({
       .on('postgres_changes', {event:'*',schema:'public',table:'movies-todo',filter:`user_id=eq.${session.user.id}`}, () => void sync())
       .subscribe(status => { if(status === 'SUBSCRIBED') void sync(); }) : null;
     const onFocus = () => void sync();
+    // A hidden Linux webview can miss WebSocket and focus events.
+    const catchUp = desktop ? window.setInterval(onFocus, 30_000) : undefined;
     window.addEventListener("tick-native-change", onFocus);
     window.addEventListener("online", onFocus);
     window.addEventListener("focus", onFocus);
     return () => {
+      window.clearInterval(catchUp);
       if(channel) void client!.removeChannel(channel);
       window.removeEventListener("tick-native-change", onFocus);
       window.removeEventListener("online", onFocus);
       window.removeEventListener("focus", onFocus);
     };
-  }, [ready, sync, client, session]);
+  }, [ready, sync, client, session, desktop]);
   useEffect(() => {
     if (!undo) return;
     const timer = setTimeout(

@@ -11,7 +11,10 @@ import android.graphics.Typeface
 import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.text.InputFilter
+import androidx.core.widget.doAfterTextChanged
 import android.view.Gravity
 import android.view.View
 import android.view.WindowManager
@@ -28,6 +31,7 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Calendar
 import java.util.UUID
+import java.util.concurrent.Executors
 
 /** A launcher-owned task stays visible behind this compact, account-bound editor. */
 class QuickAddActivity : Activity() {
@@ -51,6 +55,11 @@ class QuickAddActivity : Activity() {
     private var rating: Double? = null
     private var done = false
     private var saving = false
+    private lateinit var suggestions: LinearLayout
+    private val searchHandler = Handler(Looper.getMainLooper())
+    private val searchWorker = Executors.newSingleThreadExecutor()
+    @Volatile private var searchGeneration = 0
+    private var chosenMovie: JSONObject? = null
     private val dialogs by lazy { NativePalette.dialogContext(this) }
     private val font by lazy { Typeface.createFromAsset(assets, "fonts/DMSans.ttf") }
     private fun dp(value: Int) = (resources.displayMetrics.density * value).toInt()
@@ -106,6 +115,13 @@ class QuickAddActivity : Activity() {
             setText(saved?.getString("notes") ?: original.optString("notes"))
         }
         card.addView(notes, LinearLayout.LayoutParams(-1, 0, 1f))
+        suggestions = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        card.addView(suggestions, LinearLayout.LayoutParams(-1, 0, 1f))
+        chosenMovie = saved?.getString("chosenMovie")?.let(::JSONObject)
+        title.doAfterTextChanged {
+            chosenMovie = null
+            scheduleSearch()
+        }
         metadata = TextView(this).apply {
             typeface = font; textSize = 12f; setTextColor(palette.muted)
             setPadding(dp(4), dp(3), dp(4), dp(6))
@@ -138,6 +154,7 @@ class QuickAddActivity : Activity() {
         window.attributes = window.attributes.apply { y = dp(20) }
         updateControls()
         title.requestFocus(); title.setSelection(title.text.length)
+        scheduleSearch()
 
     }
 
@@ -170,7 +187,8 @@ class QuickAddActivity : Activity() {
     }
     private fun updateControls() {
         val movie = kind == "movie"
-        notes.visibility = if (movie) View.INVISIBLE else View.VISIBLE
+        notes.visibility = if (movie) View.GONE else View.VISIBLE
+        suggestions.visibility = if (movie) View.VISIBLE else View.GONE
         dateButton.visibility = if (movie) View.GONE else View.VISIBLE
         priorityButton.setImageResource(if (movie) R.drawable.compose_star else R.drawable.compose_flag)
         priorityButton.contentDescription = if (movie) "Movie rating" else "Task priority"
@@ -189,10 +207,64 @@ class QuickAddActivity : Activity() {
         metadata.text = details.joinToString(" · ")
         metadata.visibility = if (details.isEmpty()) View.GONE else View.VISIBLE
     }
+    private fun scheduleSearch() {
+        val generation = ++searchGeneration
+        searchHandler.removeCallbacksAndMessages(null)
+        suggestions.removeAllViews()
+        val query = title.text.toString().trim()
+        if (kind != "movie" || itemId != null || chosenMovie != null || query.length !in 2..200) return
+        searchHandler.postDelayed({
+            searchWorker.execute {
+                if (generation != searchGeneration) return@execute
+                val repository = TickRepository.get(this)
+                val result = runCatching { repository.search(query, owner).getJSONArray("results") }
+                runOnUiThread {
+                    if (generation != searchGeneration || isFinishing || isDestroyed ||
+                        saving || repository.account() != owner) return@runOnUiThread
+                    result.onSuccess { matches ->
+                        for (index in 0 until minOf(matches.length(), 2)) {
+                            val movie = matches.getJSONObject(index)
+                            val name = movie.optString(if (movie.optString("media_type") == "tv") "name" else "title")
+                            val type = if (movie.optString("media_type") == "tv") "TV" else "Film"
+                            suggestion("$name · $type") {
+                                title.setText(name)
+                                title.setSelection(title.text.length)
+                                chosenMovie = movie
+                                scheduleSearch()
+                                suggestion("✓ $name", null)
+                            }
+                        }
+                    }.onFailure { suggestion("Search unavailable. Tap to retry.", ::scheduleSearch) }
+                }
+            }
+        }, 450)
+    }
+
+    private fun suggestion(label: String, action: (() -> Unit)?) {
+        suggestions.addView(TextView(this).apply {
+            typeface = font
+            textSize = 13f
+            setTextColor(palette.muted)
+            text = label
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(4), 0, dp(4), 0)
+            if (action != null) setOnClickListener { action() }
+        }, LinearLayout.LayoutParams(-1, dp(37)))
+    }
+
+    override fun onDestroy() {
+        searchGeneration++
+        searchHandler.removeCallbacksAndMessages(null)
+        searchWorker.shutdownNow()
+        super.onDestroy()
+    }
+
     private fun chooseList() {
         if (itemId != null || saving) return
         AlertDialog.Builder(dialogs).setTitle("Add to")
-            .setSingleChoiceItems(arrayOf("Todos", "Movies"), if (kind == "todo") 0 else 1) { dialog, which -> kind = if (which == 0) "todo" else "movie"; updateControls(); dialog.dismiss() }.show()
+            .setSingleChoiceItems(arrayOf("Todos", "Movies"), if (kind == "todo") 0 else 1) { dialog, which -> kind = if (which == 0) "todo" else "movie"; chosenMovie = null; updateControls(); scheduleSearch(); dialog.dismiss() }.show()
     }
     private fun pickPriority() {
         AlertDialog.Builder(dialogs).setTitle("Priority")
@@ -232,7 +304,14 @@ class QuickAddActivity : Activity() {
         }
         field("title", title.text.toString().trim())
         if (kind == "todo") { field("notes", notes.text.toString()); field("dueAt", dueAt); field("priority", priority) }
-        else field("rating", rating)
+        else {
+            field("rating", rating)
+            chosenMovie?.let {
+                field("tmdbId", it.getInt("id"))
+                field("mediaType", it.getString("media_type"))
+                field("poster", it.opt("poster_path"))
+            }
+        }
         if (itemId != null) field("done", done)
         return patch
     }
@@ -242,7 +321,7 @@ class QuickAddActivity : Activity() {
         val repository = TickRepository.get(this)
         if (repository.account() != owner) { unavailable(); return }
         val patch = patch()
-        if (kind == "movie" && itemId == null && !duplicateConfirmed) {
+        if (kind == "movie" && itemId == null && chosenMovie == null && !duplicateConfirmed) {
             val items = repository.read().getJSONArray("items")
             if ((0 until items.length()).map { items.getJSONObject(it) }.any { it.optString("kind") == "movie" && it.isNull("deletedAt") && it.optString("title").equals(title.text.toString().trim(), true) }) {
                 AlertDialog.Builder(dialogs).setTitle("Already on your list?").setMessage("A similar title exists. Add a separate entry?")
@@ -256,8 +335,10 @@ class QuickAddActivity : Activity() {
         Thread {
             try {
                 val result = repository.mutate(request.toString())
-                val outbox = result.getJSONObject("state").getJSONArray("outbox")
-                val savedId = itemId ?: outbox.getJSONObject(outbox.length()-1).getString("itemId")
+                val savedId = result.optString("existingId").ifEmpty { itemId ?: draftId }
+                if (result.has("existingId") && !expand) runOnUiThread {
+                    Toast.makeText(this, "Already on your watchlist.", Toast.LENGTH_SHORT).show()
+                }
                 runOnUiThread { if (expand) startActivity(Widgets.launch(this, kind, savedId)); finish() }
             } catch (error: Exception) {
                 runOnUiThread { saving = false; saveButton.isEnabled = true; expandButton.isEnabled = true; title.isEnabled = true; notes.isEnabled = true; title.error = error.message ?: "Could not save. Try again." }
@@ -276,6 +357,7 @@ class QuickAddActivity : Activity() {
     override fun onSaveInstanceState(out: Bundle) {
         out.putString("draftId", draftId); out.putString("owner", owner); out.putString("kind", kind); out.putString("itemId", itemId); out.putString("original", original.toString())
         out.putString("title", title.text.toString()); out.putString("notes", notes.text.toString()); out.putString("dueAt", dueAt)
+        out.putString("chosenMovie", chosenMovie?.toString())
         out.putInt("priority", priority); out.putString("rating", rating?.toString()); out.putBoolean("done", done)
         super.onSaveInstanceState(out)
     }

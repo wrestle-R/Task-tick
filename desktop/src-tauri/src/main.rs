@@ -186,7 +186,11 @@ fn search_movies(store: &Store, request: &Value) -> Result<Value, String> {
         .send()
         .map_err(|_| "Movie search needs a connection")?;
     if !response.status().is_success() {
-        return Err("Movie search unavailable. You can add the title manually.".into());
+        return Err(match response.status().as_u16() {
+            401 => "Your session is reconnecting. Try search again shortly.",
+            429 => "Too many searches. Try again shortly.",
+            _ => "Movie search unavailable. You can add the title manually.",
+        }.into());
     }
     let result: Value = response
         .json()
@@ -437,20 +441,68 @@ fn ipc(store: &Store, request: Value) -> Result<Value, String> {
     state["_account"] = json!(account);
     Ok(state)
 }
+fn write_ipc_response(stream: &mut UnixStream, result: Result<Value, String>) {
+    let response = result.unwrap_or_else(|error| json!({"error":error}));
+    let _ = writeln!(stream, "{}", response);
+}
+
+fn serve_sidebar(listener: UnixListener, handle: tauri::AppHandle) {
+    // A slow search must not stall the list, and the queue bounds concurrent lookups.
+    let (search_tx, search_rx) = std::sync::mpsc::sync_channel::<(UnixStream, Value)>(1);
+    let search_handle = handle.clone();
+    std::thread::spawn(move || {
+        for (mut stream, request) in search_rx {
+            let result = ipc(&search_handle.state::<Store>(), request);
+            write_ipc_response(&mut stream, result);
+        }
+    });
+    for stream in listener.incoming().flatten() {
+        let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(2)));
+        let _ = stream.set_write_timeout(Some(std::time::Duration::from_secs(2)));
+        let mut reader = BufReader::new(stream);
+        let mut line = String::new();
+        use std::io::Read;
+        let request = reader.by_ref().take(65536).read_line(&mut line)
+            .map_err(|_| "Invalid request".to_string())
+            .and_then(|_| serde_json::from_str::<Value>(&line).map_err(|_| "Invalid request".to_string()));
+        let mut stream = reader.into_inner();
+        if request.as_ref().is_ok_and(|request| request["action"] == "search") {
+            if let Err(std::sync::mpsc::TrySendError::Full((mut stream, _)) |
+                std::sync::mpsc::TrySendError::Disconnected((mut stream, _))) =
+                search_tx.try_send((stream, request.unwrap()))
+            {
+                write_ipc_response(&mut stream, Err("Movie search is busy. Try again shortly.".into()));
+            }
+            continue;
+        }
+        let changed = request.as_ref().is_ok_and(|request| matches!(request["action"].as_str(), Some("add" | "toggle")));
+        let result = request.and_then(|request| ipc(&handle.state::<Store>(), request));
+        if changed && result.is_ok() {
+            if let Some(window) = handle.get_webview_window("main") {
+                let _ = window.eval("window.dispatchEvent(new Event('tick-native-change'))");
+            }
+        }
+        write_ipc_response(&mut stream, result);
+    }
+}
+
 fn main() {
     if std::env::args().nth(1).as_deref() == Some("--ipc") {
         let raw = std::env::args()
             .nth(2)
             .unwrap_or_else(|| "{\"action\":\"state\"}".into());
+        let search = serde_json::from_str::<Value>(&raw).is_ok_and(|value| value["action"] == "search");
         match UnixStream::connect(socket_path()) {
             Ok(mut stream) => {
                 stream
-                    .set_read_timeout(Some(std::time::Duration::from_secs(3)))
+                    .set_read_timeout(Some(std::time::Duration::from_secs(if search { 26 } else { 3 })))
                     .ok();
                 writeln!(stream, "{}", raw).ok();
                 let mut output = String::new();
-                BufReader::new(stream).read_line(&mut output).ok();
-                print!("{}", output);
+                match BufReader::new(stream).read_line(&mut output) {
+                    Ok(n) if n > 0 => print!("{}", output),
+                    _ => println!("{}", json!({"error":if search {"Movie search timed out. Try again."} else {"Task-tick is not responding."}})),
+                }
             }
             Err(_) => {
                 println!("{{\"error\":\"Open Task-tick first\"}}");
@@ -470,7 +522,7 @@ fn main() {
   TrayIconBuilder::with_id("tick-and-done").icon(tauri::image::Image::from_bytes(include_bytes!("../icons/icon.png"))?).tooltip("Task-tick").menu(&menu).on_menu_event(|app,event|{if event.id.as_ref()=="quit"{app.exit(0)}else if let Some(w)=app.get_webview_window("main"){w.show().ok();w.set_focus().ok();}}).build(app)?;
   let path=socket_path();if path.exists(){std::fs::remove_file(&path)?}let listener=UnixListener::bind(&path)?;std::fs::set_permissions(&path,std::fs::Permissions::from_mode(0o600))?;let handle=app.handle().clone();
   let reminders=app.handle().clone();std::thread::spawn(move||loop{std::thread::sleep(std::time::Duration::from_secs(30));let _=notify_due(&reminders.state::<Store>());});
-  std::thread::spawn(move||{for stream in listener.incoming().flatten(){stream.set_read_timeout(Some(std::time::Duration::from_secs(2))).ok();let mut reader=BufReader::new(stream);let mut line=String::new();use std::io::Read;let read=reader.by_ref().take(65536).read_line(&mut line);let response=if read.is_ok(){serde_json::from_str::<Value>(&line).map_err(|e|e.to_string()).and_then(|request|{let changed=request["action"].as_str().unwrap_or("state")!="state";let result=ipc(&handle.state::<Store>(),request);if changed&&result.is_ok(){if let Some(window)=handle.get_webview_window("main"){window.eval("window.dispatchEvent(new Event('tick-native-change'))").ok();}}result})}else{Err("Invalid request".into())};let output=response.unwrap_or_else(|e|json!({"error":e}));writeln!(reader.get_mut(),"{}",output).ok();}});
+  std::thread::spawn(move || serve_sidebar(listener, handle));
   Ok(())
  }).on_window_event(|window,event|{if let tauri::WindowEvent::CloseRequested{api,..}=event{api.prevent_close();window.hide().ok();}})
  .run(tauri::generate_context!()).expect("Unable to start Task-tick");

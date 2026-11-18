@@ -6,6 +6,7 @@ import React, {
   useState,
 } from 'react';
 import {
+  ActivityIndicator,
   Alert,
   Animated,
   AppState,
@@ -83,6 +84,7 @@ export default function App() {
 function TickApp() {
   const systemDark = useColorScheme() === 'dark';
   const [snap, setSnap] = useState(blank);
+  const [loaded, setLoaded] = useState(false);
   const dark =
     snap.appearance === 'dark' || (snap.appearance === 'system' && systemDark);
   const palette = themes[dark ? 'dark' : 'light'];
@@ -101,10 +103,17 @@ function TickApp() {
     [busy, setBusy] = useState(false),
     [syncing, setSyncing] = useState(false),
     [error, setError] = useState(''),
-    [query, setQuery] = useState(''),
     [results, setResults] = useState<any[]>([]),
     [undo, setUndo] = useState<any>(null),
     [subtask, setSubtask] = useState('');
+  const [notesOpen, setNotesOpen] = useState(false);
+  const [editorTitle, setEditorTitle] = useState<string | null>(null);
+  const [editorNotes, setEditorNotes] = useState<string | null>(null);
+  const [savingEditor, setSavingEditor] = useState(false);
+  const [editorError, setEditorError] = useState('');
+  const [searchError, setSearchError] = useState('');
+  const [searchAttempt, setSearchAttempt] = useState(0);
+  const addingSubtask = useRef(false);
   const [availableUpdate, setAvailableUpdate] = useState<any>(null);
   const [installingUpdate, setInstallingUpdate] = useState(false);
   useEffect(() => {
@@ -115,19 +124,21 @@ function TickApp() {
         if (live) setAvailableUpdate(value ? JSON.parse(value) : null);
       } catch {}
     };
+    if (!loaded) return;
     void check();
     const timer = setInterval(() => void check(), 30 * 60 * 1000);
     return () => {
       live = false;
       clearInterval(timer);
     };
-  }, []);
+  }, [loaded]);
   const [completedOpen, setCompletedOpen] = useState(true);
   const [composing, setComposing] = useState(false);
   const searchGeneration = useRef(0);
   useEffect(() => {
     const generation = ++searchGeneration.current;
     setResults([]);
+    setSearchError('');
     if (
       kind !== 'movie' ||
       !composing ||
@@ -138,19 +149,19 @@ function TickApp() {
     const account = snap.account;
     const timer = setTimeout(async () => {
       try {
-        const value = JSON.parse(await native.search(title.trim()));
+        const value = JSON.parse(await native.search(title.trim(), account));
         if (searchGeneration.current === generation && account === snap.account)
           setResults(value.results);
       } catch (e) {
         if (searchGeneration.current === generation)
-          setError((e as Error).message);
+          setSearchError((e as Error).message || 'Movie search unavailable.');
       }
     }, 350);
     return () => {
       clearTimeout(timer);
       searchGeneration.current++;
     };
-  }, [title, kind, composing, snap.account]);
+  }, [title, kind, composing, snap.account, searchAttempt]);
   const pendingLink = useRef<string | null>(null);
   async function refresh(lifecycle = false) {
     try {
@@ -158,6 +169,7 @@ function TickApp() {
         await (lifecycle ? native.resume() : native.snapshot()),
       );
       setSnap(value);
+      setLoaded(true);
       const u = value.state.undo;
       setUndo(u && u.until > Date.now() ? u : null);
       if (pendingLink.current) {
@@ -166,11 +178,11 @@ function TickApp() {
         setView('active');
         setSettings(false);
         const id = link.match(/[?&]item=([^&]+)/)?.[1];
-        setSelected(
-          id
-            ? (value.state.items.find((i: Item) => i.id === id) ?? null)
-            : null,
-        );
+        const item = id
+          ? value.state.items.find((i: Item) => i.id === id)
+          : null;
+        resetEditor();
+        setSelected(item ?? null);
         pendingLink.current = null;
       }
     } catch (e) {
@@ -324,18 +336,71 @@ function TickApp() {
     else await finish();
   }
   async function patch(p: Partial<Fields>) {
-    if (selected && (await mutate(selected.kind, p, selected.id)))
-      setSelected({ ...selected, ...p });
+    if (selected) {
+      const saved = await mutate(selected.kind, p, selected.id);
+      setEditorError(saved ? '' : 'Could not update this item. Try again.');
+    }
   }
-  async function search() {
-    if (!query.trim()) return;
-    setBusy(true);
+  function resetEditor() {
+    setNotesOpen(false);
+    setEditorTitle(null);
+    setEditorNotes(null);
+    setSubtask('');
+    setEditorError('');
+  }
+  function openEditor(item: Item) {
+    resetEditor();
+    setSelected(item);
+  }
+  const currentItem = selected
+    ? snap.state.items.find(item => item.id === selected.id && !item.deletedAt)
+    : undefined;
+  const children = selected
+    ? snap.state.items
+        .filter(item => item.parentId === selected.id && !item.deletedAt)
+        .sort(compareItems)
+    : [];
+  async function closeEditor() {
+    if (!selected || savingEditor || addingSubtask.current) return;
+    const changes: Partial<Fields> = {};
+    if (editorTitle !== null && editorTitle.trim() !== currentItem?.title)
+      changes.title = editorTitle.trim();
+    if (editorNotes !== null && editorNotes !== currentItem?.notes)
+      changes.notes = editorNotes;
+    if (changes.title === '') {
+      setEditorError('Enter a title.');
+      return;
+    }
+    setSavingEditor(true);
     try {
-      setResults(JSON.parse(await native.search(query.trim())).results);
-    } catch (e) {
-      setError((e as Error).message);
+      if (
+        Object.keys(changes).length &&
+        !(await mutate(selected.kind, changes, selected.id))
+      ) {
+        setEditorError('Could not save. Your edits are still here.');
+        return;
+      }
+      if (subtask.trim() && !selected.parentId && !(await addSubtask())) return;
+      setSelected(null);
+      resetEditor();
     } finally {
-      setBusy(false);
+      setSavingEditor(false);
+    }
+  }
+  async function addSubtask() {
+    const name = subtask.trim();
+    if (!selected || !name || addingSubtask.current) return false;
+    addingSubtask.current = true;
+    try {
+      const saved = await mutate('todo', {
+        title: name,
+        parentId: selected.id,
+      });
+      if (saved) setSubtask(value => (value.trim() === name ? '' : value));
+      setEditorError(saved ? '' : 'Could not add the subtask. Try again.');
+      return saved;
+    } finally {
+      addingSubtask.current = false;
     }
   }
   async function addResult(movie: any) {
@@ -347,22 +412,29 @@ function TickApp() {
         i.mediaType === movie.media_type,
     );
     if (existing) {
-      setSelected(existing);
+      openEditor(existing);
       setResults([]);
       return;
     }
-    await mutate('movie', {
-      title: movie.title ?? movie.name,
-      tmdbId: movie.id,
-      mediaType: movie.media_type,
-      poster: movie.poster_path,
-    });
+    if (
+      !(await mutate('movie', {
+        title: movie.title ?? movie.name,
+        tmdbId: movie.id,
+        mediaType: movie.media_type,
+        poster: movie.poster_path,
+      }))
+    )
+      return;
     setResults([]);
-    setQuery('');
     setTitle('');
     setComposing(false);
   }
-  const all = snap.state.items.filter(i => i.kind === kind);
+  const childCounts = new Map<string, number>();
+  for (const item of snap.state.items) {
+    if (item.parentId && !item.deletedAt)
+      childCounts.set(item.parentId, (childCounts.get(item.parentId) ?? 0) + 1);
+  }
+  const all = snap.state.items.filter(i => i.kind === kind && !i.parentId);
   const activeItems = all
     .filter(i => !i.deletedAt && !i.done)
     .sort(compareItems);
@@ -395,10 +467,7 @@ function TickApp() {
         ];
   function reorder(index: number, delta: number) {
     if (view !== 'active') return;
-    const target = Math.max(
-      0,
-      Math.min(items.length - 1, index + Math.round(delta / 80)),
-    );
+    const target = Math.max(0, Math.min(items.length - 1, index + delta));
     if (index === target) return;
     const reordered = items.filter((_, i) => i !== index);
     reordered.splice(target, 0, items[index]);
@@ -471,7 +540,23 @@ function TickApp() {
             <Text style={{ fontSize: 28, color: c.muted }}>☷</Text>
           </Pressable>
         </View>
-        {!snap.account ? (
+        {!loaded ? (
+          <View style={s.empty}>
+            {error ? (
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => void refresh(true)}
+              >
+                <Text style={{ color: c.muted }}>Try again</Text>
+              </Pressable>
+            ) : (
+              <ActivityIndicator
+                accessibilityLabel="Opening Task-tick"
+                color={c.accent}
+              />
+            )}
+          </View>
+        ) : !snap.account ? (
           <ScrollView contentContainerStyle={s.auth}>
             <Text style={[s.eyebrow, { color: c.muted }]}>
               A LITTLE LESS ON YOUR MIND
@@ -549,42 +634,35 @@ function TickApp() {
           </ScrollView>
         ) : (
           <>
-            <View style={s.modes}>
-              {(['todo', 'movie', 'trash'] as const).map(tab => {
-                const chosen =
-                  tab === 'trash'
-                    ? view === 'trash'
-                    : kind === tab && view !== 'trash';
-                return (
-                  <Pressable
-                    key={tab}
-                    accessibilityRole="tab"
-                    accessibilityState={{ selected: chosen }}
-                    style={[s.mode, chosen && s.modeActive]}
-                    onPress={() => {
-                      if (tab !== 'trash') setKind(tab);
-                      setView(tab === 'trash' ? 'trash' : 'active');
-                      setResults([]);
-                      setComposing(false);
-                      setTitle('');
-                    }}
-                  >
-                    <Text
-                      style={{
-                        color: chosen ? c.ink : c.muted,
-                        fontSize: 14,
-                        fontWeight: chosen ? '700' : '500',
-                      }}
-                    >
-                      {tab === 'todo'
-                        ? 'Todos'
-                        : tab === 'movie'
-                          ? 'Watchlist'
-                          : 'Trash'}
-                    </Text>
-                  </Pressable>
-                );
-              })}
+            <View style={s.listHeading}>
+              <View style={{ flex: 1 }}>
+                <Text accessibilityRole="header" style={s.listTitle}>
+                  {view === 'trash'
+                    ? 'Trash'
+                    : kind === 'todo'
+                      ? 'Todos'
+                      : 'Watchlist'}
+                </Text>
+                {view !== 'trash' && (
+                  <Text style={{ color: c.muted }}>
+                    {activeItems.length} left
+                  </Text>
+                )}
+              </View>
+              {view === 'active' && (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={
+                    composing ? 'Close quick add' : 'Add item'
+                  }
+                  onPress={() => setComposing(!composing)}
+                  style={s.addAction}
+                >
+                  <Text style={{ fontSize: 23, color: c.accentInk }}>
+                    {composing ? '×' : '+'}
+                  </Text>
+                </Pressable>
+              )}
             </View>
             {view === 'trash' && (
               <Text
@@ -612,6 +690,7 @@ function TickApp() {
                       : 'Add a movie or TV title…'
                   }
                   placeholderTextColor={c.muted}
+                  autoFocus
                   value={title}
                   onChangeText={setTitle}
                   onSubmitEditing={() => void add()}
@@ -623,6 +702,17 @@ function TickApp() {
                   <Text style={s.addButton}>Add</Text>
                 </Pressable>
               </View>
+            )}
+            {composing && searchError !== '' && (
+              <Pressable
+                accessibilityRole="button"
+                style={s.error}
+                onPress={() => setSearchAttempt(n => n + 1)}
+              >
+                <Text style={{ color: c.error }}>
+                  {searchError} Tap to retry, or add the title manually.
+                </Text>
+              </Pressable>
             )}
             {results.length > 0 ? (
               <FlatList
@@ -717,10 +807,11 @@ function TickApp() {
                     </Pressable>
                   ) : null
                 }
+                style={s.root}
                 contentContainerStyle={{
-                  paddingHorizontal: 16,
+                  paddingHorizontal: 22,
                   paddingTop: 12,
-                  paddingBottom: 90,
+                  paddingBottom: 18,
                   flexGrow: 1,
                 }}
                 keyExtractor={i => i.id}
@@ -749,29 +840,13 @@ function TickApp() {
                       else
                         void mutate(item.kind, { done: !item.done }, item.id);
                     }}
-                    onOpen={() => setSelected(item)}
+                    onOpen={() => openEditor(item)}
+                    childCount={childCounts.get(item.id) ?? 0}
                     onMove={delta => reorder(index, delta)}
                     draggable={view === 'active' && !item.done}
                   />
                 )}
               />
-            )}
-            {view === 'active' && (
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={composing ? 'Close quick add' : 'Add item'}
-                onPress={() => {
-                  setComposing(!composing);
-                  setResults([]);
-                }}
-                style={s.fab}
-              >
-                <Text
-                  style={{ fontSize: 32, lineHeight: 36, color: c.accentInk }}
-                >
-                  {composing ? '×' : '+'}
-                </Text>
-              </Pressable>
             )}
             <View style={[s.footer, { borderColor: c.line }]}>
               <Text style={{ color: c.muted, fontSize: 10 }}>
@@ -789,6 +864,51 @@ function TickApp() {
                   ↗
                 </Text>
               </Pressable>
+            </View>
+            <View style={s.navigation} accessibilityRole="tablist">
+              {(['todo', 'movie', 'trash'] as const).map(tab => {
+                const chosen =
+                  tab === 'trash'
+                    ? view === 'trash'
+                    : kind === tab && view !== 'trash';
+                return (
+                  <Pressable
+                    key={tab}
+                    accessibilityRole="tab"
+                    accessibilityState={{ selected: chosen }}
+                    style={s.destination}
+                    onPress={() => {
+                      if (tab !== 'trash') setKind(tab);
+                      setView(tab === 'trash' ? 'trash' : 'active');
+                      setResults([]);
+                      setComposing(false);
+                      setTitle('');
+                    }}
+                  >
+                    <Text
+                      style={[
+                        s.destinationIcon,
+                        chosen && s.destinationSelected,
+                      ]}
+                    >
+                      {tab === 'todo' ? '☑' : tab === 'movie' ? '▷' : '⌫'}
+                    </Text>
+                    <Text
+                      style={{
+                        color: chosen ? c.ink : c.muted,
+                        fontSize: 11,
+                        fontWeight: chosen ? '700' : '500',
+                      }}
+                    >
+                      {tab === 'todo'
+                        ? 'Todos'
+                        : tab === 'movie'
+                          ? 'Watchlist'
+                          : 'Trash'}
+                    </Text>
+                  </Pressable>
+                );
+              })}
             </View>
           </>
         )}
@@ -810,17 +930,19 @@ function TickApp() {
         <Modal
           visible={selected !== null}
           animationType="slide"
-          onRequestClose={() => setSelected(null)}
+          onRequestClose={() => void closeEditor()}
         >
           <SafeAreaProvider>
             <SafeAreaView style={[s.root, { backgroundColor: c.bg }]}>
               <View style={s.sheetHeader}>
                 <Text style={[s.eyebrow, { color: c.muted }]}>
-                  A LITTLE DETAIL
+                  {selected?.kind === 'movie'
+                    ? 'Watchlist item'
+                    : 'Task details'}
                 </Text>
                 <Pressable
                   accessibilityRole="button"
-                  accessibilityLabel="Close item editor"
+                  accessibilityLabel="Done editing"
                   hitSlop={12}
                   style={{
                     minWidth: 44,
@@ -828,49 +950,151 @@ function TickApp() {
                     alignItems: 'center',
                     justifyContent: 'center',
                   }}
-                  onPress={() => setSelected(null)}
+                  disabled={savingEditor}
+                  onPress={() => void closeEditor()}
                 >
-                  <Text style={{ fontSize: 24, color: c.ink }}>×</Text>
+                  <Text style={s.addButton}>Done</Text>
                 </Pressable>
               </View>
               {selected && (
-                <ScrollView contentContainerStyle={s.sheet}>
-                  {label('TITLE')}
+                <ScrollView
+                  keyboardShouldPersistTaps="handled"
+                  contentContainerStyle={s.sheet}
+                >
                   <TextInput
-                    style={[...inputStyle, { fontSize: 22 }]}
-                    value={selected.title}
-                    onChangeText={t => setSelected({ ...selected, title: t })}
-                    onEndEditing={() =>
-                      selected.title.trim() &&
-                      void patch({ title: selected.title.trim() })
-                    }
+                    accessibilityLabel="Title"
+                    style={[...inputStyle, s.editorTitle]}
+                    value={editorTitle ?? currentItem?.title ?? selected.title}
+                    onChangeText={setEditorTitle}
+                    maxLength={500}
+                    multiline
                   />
+                  {editorError !== '' && (
+                    <Text style={{ color: c.error }}>{editorError}</Text>
+                  )}
                   <Pressable
-                    style={s.primary}
-                    onPress={() => void patch({ done: !selected.done })}
+                    style={s.editorAction}
+                    onPress={() =>
+                      void patch({ done: !(currentItem ?? selected).done })
+                    }
                   >
-                    <Text style={s.primaryText}>
-                      {selected.done ? 'Mark unfinished' : 'Mark as done'} ✓
+                    <Text style={{ color: c.ink }}>
+                      {(currentItem ?? selected).done
+                        ? '✓  Mark unfinished'
+                        : '○  Mark complete'}
                     </Text>
                   </Pressable>
                   {selected.kind === 'todo' ? (
                     <>
-                      {label('NOTES')}
-                      <TextInput
-                        multiline
-                        style={[
-                          ...inputStyle,
-                          { minHeight: 130, textAlignVertical: 'top' },
-                        ]}
-                        value={selected.notes}
-                        onChangeText={t =>
-                          setSelected({ ...selected, notes: t })
-                        }
-                        onEndEditing={() =>
-                          void patch({ notes: selected.notes })
-                        }
-                      />
-                      {label('DUE DATE & REMINDER')}
+                      {!selected.parentId && (
+                        <>
+                          {label(
+                            children.length
+                              ? `Subtasks · ${children.filter(i => i.done).length}/${children.length}`
+                              : 'Subtasks',
+                          )}
+                          {children.map(item => (
+                            <View key={item.id} style={s.subtaskRow}>
+                              <Pressable
+                                accessibilityRole="checkbox"
+                                accessibilityState={{ checked: item.done }}
+                                onPress={() =>
+                                  void mutate(
+                                    'todo',
+                                    { done: !item.done },
+                                    item.id,
+                                  )
+                                }
+                                style={s.subtaskToggle}
+                              >
+                                <Text style={{ color: c.muted }}>
+                                  {item.done ? '✓' : '○'}
+                                </Text>
+                                <Text
+                                  style={{
+                                    flex: 1,
+                                    textDecorationLine: item.done
+                                      ? 'line-through'
+                                      : 'none',
+                                  }}
+                                >
+                                  {item.title}
+                                </Text>
+                              </Pressable>
+                              <Pressable
+                                accessibilityRole="button"
+                                accessibilityLabel={`Move ${item.title} to trash`}
+                                onPress={() =>
+                                  void mutate('todo', {}, item.id, 'delete')
+                                }
+                                hitSlop={8}
+                              >
+                                <Text style={{ color: c.muted }}>×</Text>
+                              </Pressable>
+                            </View>
+                          ))}
+                          <View style={s.subtaskRow}>
+                            <TextInput
+                              accessibilityLabel="New subtask"
+                              style={[...inputStyle, { flex: 1 }]}
+                              placeholder="Add a subtask"
+                              placeholderTextColor={c.muted}
+                              value={subtask}
+                              maxLength={500}
+                              onChangeText={setSubtask}
+                              onSubmitEditing={() => void addSubtask()}
+                            />
+                            <Pressable
+                              accessibilityRole="button"
+                              accessibilityLabel="Add subtask"
+                              disabled={!subtask.trim()}
+                              onPress={() => void addSubtask()}
+                              style={{ opacity: subtask.trim() ? 1 : 0.5 }}
+                            >
+                              <Text style={s.addButton}>Add</Text>
+                            </Pressable>
+                          </View>
+                        </>
+                      )}
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityState={{ expanded: notesOpen }}
+                        onPress={() => setNotesOpen(!notesOpen)}
+                        style={s.notesToggle}
+                      >
+                        <View style={{ flex: 1 }}>
+                          <Text style={{ fontWeight: '600' }}>Notes</Text>
+                          {!notesOpen && (
+                            <Text numberOfLines={1} style={{ color: c.muted }}>
+                              {(
+                                editorNotes ??
+                                currentItem?.notes ??
+                                selected.notes
+                              ).trim() || 'Add a note'}
+                            </Text>
+                          )}
+                        </View>
+                        <Text style={{ color: c.muted }}>
+                          {notesOpen ? '⌃' : '⌄'}
+                        </Text>
+                      </Pressable>
+                      {notesOpen && (
+                        <TextInput
+                          accessibilityLabel="Task notes"
+                          multiline
+                          scrollEnabled
+                          maxLength={20000}
+                          style={[
+                            ...inputStyle,
+                            { height: 180, textAlignVertical: 'top' },
+                          ]}
+                          value={
+                            editorNotes ?? currentItem?.notes ?? selected.notes
+                          }
+                          onChangeText={setEditorNotes}
+                        />
+                      )}
+                      {label('Due date and reminder')}
                       <Pressable
                         style={[s.input, { borderColor: c.line }]}
                         onPress={async () => {
@@ -883,31 +1107,34 @@ function TickApp() {
                         }}
                       >
                         <Text style={{ color: c.ink }}>
-                          {selected.dueAt
-                            ? new Date(selected.dueAt).toLocaleString()
+                          {(currentItem ?? selected).dueAt
+                            ? new Date(
+                                (currentItem ?? selected).dueAt!,
+                              ).toLocaleString()
                             : 'Choose a date & time ↗'}
                         </Text>
                       </Pressable>
-                      {selected.dueAt && (
+                      {(currentItem ?? selected).dueAt && (
                         <Pressable onPress={() => void patch({ dueAt: null })}>
                           <Text style={s.link}>Remove reminder</Text>
                         </Pressable>
                       )}
-                      {label('PRIORITY')}
+                      {label('Priority')}
                       <View style={s.modes}>
                         {['None', 'Low', 'Medium', 'High'].map((v, n) => (
                           <Pressable
                             key={v}
                             style={[
                               s.mode,
-                              selected.priority === n && s.modeActive,
+                              (currentItem ?? selected).priority === n &&
+                                s.modeActive,
                             ]}
                             onPress={() => void patch({ priority: n })}
                           >
                             <Text
                               style={{
                                 color:
-                                  selected.priority === n
+                                  (currentItem ?? selected).priority === n
                                     ? c.accentInk
                                     : c.muted,
                                 fontSize: 12,
@@ -918,56 +1145,18 @@ function TickApp() {
                           </Pressable>
                         ))}
                       </View>
-                      {!selected.parentId && (
-                        <>
-                          {label('SUBTASKS')}
-                          {snap.state.items
-                            .filter(
-                              i => i.parentId === selected.id && !i.deletedAt,
-                            )
-                            .map(i => (
-                              <Pressable
-                                key={i.id}
-                                style={s.subtask}
-                                onPress={() =>
-                                  void mutate('todo', { done: !i.done }, i.id)
-                                }
-                              >
-                                <Text style={{ color: c.ink }}>
-                                  {i.done ? '✓' : '○'} {i.title}
-                                </Text>
-                              </Pressable>
-                            ))}
-                          <TextInput
-                            style={inputStyle}
-                            placeholder="One smaller step…"
-                            placeholderTextColor={c.muted}
-                            value={subtask}
-                            onChangeText={setSubtask}
-                            onSubmitEditing={async () => {
-                              if (
-                                subtask.trim() &&
-                                (await mutate('todo', {
-                                  title: subtask.trim(),
-                                  parentId: selected.id,
-                                }))
-                              )
-                                setSubtask('');
-                            }}
-                          />
-                        </>
-                      )}
                     </>
                   ) : (
                     <>
-                      {label('YOUR RATING')}
+                      {label('Your rating')}
                       <View style={s.ratingOptions}>
                         {[null, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5].map(n => (
                           <Pressable
                             key={String(n)}
                             style={[
                               s.mode,
-                              selected.rating === n && s.modeActive,
+                              (currentItem ?? selected).rating === n &&
+                                s.modeActive,
                             ]}
                             onPress={() => void patch({ rating: n })}
                           >
@@ -1136,6 +1325,7 @@ function TaskRow({
   onMove,
   draggable,
   trash,
+  childCount,
 }: {
   colors: any;
   item: Item;
@@ -1144,10 +1334,12 @@ function TaskRow({
   onMove: (dy: number) => void;
   draggable: boolean;
   trash: boolean;
+  childCount: number;
 }) {
   const dy = useRef(new Animated.Value(0)).current;
   const s = makeStyles(colors);
   const palette = colors;
+  const rowHeight = useRef(58);
   const move = useRef(onMove);
   move.current = onMove;
   const pan = useRef(
@@ -1156,7 +1348,7 @@ function TaskRow({
       onMoveShouldSetPanResponder: () => true,
       onPanResponderMove: (_, g) => dy.setValue(g.dy),
       onPanResponderRelease: (_, g) => {
-        move.current(g.dy);
+        move.current(Math.round(g.dy / rowHeight.current));
         dy.setValue(0);
       },
       onPanResponderTerminate: () => dy.setValue(0),
@@ -1164,6 +1356,9 @@ function TaskRow({
   ).current;
   return (
     <Animated.View
+      onLayout={event => {
+        rowHeight.current = event.nativeEvent.layout.height;
+      }}
       style={[
         s.row,
         {
@@ -1182,6 +1377,9 @@ function TaskRow({
               : 'Complete item'
         }
         onPress={onToggle}
+        hitSlop={10}
+        accessibilityRole={trash ? 'button' : 'checkbox'}
+        accessibilityState={trash ? undefined : { checked: item.done }}
         style={[
           s.check,
           { borderColor: colors.muted },
@@ -1203,6 +1401,7 @@ function TaskRow({
       )}
       <Pressable onPress={onOpen} style={{ flex: 1 }}>
         <Text
+          numberOfLines={2}
           style={[
             s.itemTitle,
             { color: colors.ink },
@@ -1214,6 +1413,21 @@ function TaskRow({
         >
           {item.title}
         </Text>
+        {(childCount > 0 || Boolean(item.notes.trim())) && (
+          <Text
+            numberOfLines={1}
+            style={{ fontSize: 11, marginTop: 3, color: colors.muted }}
+          >
+            {[
+              childCount
+                ? `${childCount} ${childCount === 1 ? 'subtask' : 'subtasks'}`
+                : '',
+              item.notes.trim() ? 'Notes' : '',
+            ]
+              .filter(Boolean)
+              .join(' · ')}
+          </Text>
+        )}
         {item.dueAt && (
           <Text
             style={{
@@ -1281,7 +1495,7 @@ const makeStyles = (palette: typeof themes.light | typeof themes.dark) =>
       marginTop: 20,
     },
     description: { fontSize: 12, lineHeight: 21, marginTop: 12 },
-    label: { fontSize: 9, letterSpacing: 1.3, marginTop: 25, marginBottom: 10 },
+    label: { fontSize: 13, fontWeight: '600', marginTop: 22, marginBottom: 8 },
     input: {
       borderWidth: 1,
       borderRadius: themeGeometry.controlRadius,
@@ -1370,32 +1584,64 @@ const makeStyles = (palette: typeof themes.light | typeof themes.dark) =>
       borderTopLeftRadius: 14,
       borderTopRightRadius: 14,
     },
-    fab: {
-      position: 'absolute',
-      bottom: 70,
-      right: 23,
-      width: 56,
-      height: 56,
-      borderRadius: 28,
+    navigation: {
+      flexDirection: 'row',
+      borderTopWidth: 1,
+      borderColor: palette.line,
+      backgroundColor: palette.surface,
+      paddingTop: 4,
+      paddingBottom: 5,
+    },
+    destination: {
+      flex: 1,
+      minHeight: 52,
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 2,
+    },
+    destinationIcon: {
+      width: 54,
+      height: 27,
+      textAlign: 'center',
+      textAlignVertical: 'center',
+      fontSize: 18,
+      color: palette.muted,
+      borderRadius: 14,
+      overflow: 'hidden',
+    },
+    destinationSelected: {
+      backgroundColor: palette.accent,
+      color: palette.accentInk,
+    },
+    listHeading: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+      paddingHorizontal: 23,
+      paddingTop: 9,
+      paddingBottom: 12,
+    },
+    listTitle: {
+      fontFamily: 'Manrope',
+      fontSize: 34,
+      fontWeight: '700',
+      letterSpacing: -1.2,
+    },
+    addAction: {
+      width: 48,
+      height: 48,
+      borderRadius: 16,
       alignItems: 'center',
       justifyContent: 'center',
       backgroundColor: palette.accent,
-      shadowColor: '#000',
-      shadowOffset: { width: 0, height: 4 },
-      shadowOpacity: 0.2,
-      shadowRadius: 8,
-      elevation: 5,
     },
     row: {
       flexDirection: 'row',
       alignItems: 'center',
       gap: 13,
-      backgroundColor: palette.surface,
-      borderBottomWidth: 0,
-      minHeight: 54,
-      paddingHorizontal: 14,
-      paddingVertical: 10,
-      borderRadius: 8,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      minHeight: 56,
+      paddingVertical: 8,
     },
     check: {
       width: 21,
@@ -1428,7 +1674,7 @@ const makeStyles = (palette: typeof themes.light | typeof themes.dark) =>
     },
     undo: {
       position: 'absolute',
-      bottom: 35,
+      bottom: 83,
       left: 24,
       right: 24,
       backgroundColor: '#2C3427',
@@ -1445,7 +1691,43 @@ const makeStyles = (palette: typeof themes.light | typeof themes.dark) =>
     },
     sheet: { padding: 27, paddingTop: 5, paddingBottom: 70 },
     ratingOptions: { flexDirection: 'row', flexWrap: 'wrap', gap: 7 },
-    subtask: { paddingVertical: 12 },
+    editorTitle: {
+      fontSize: 24,
+      fontWeight: '600',
+      paddingHorizontal: 12,
+      maxHeight: 112,
+    },
+    editorAction: {
+      paddingVertical: 15,
+      marginTop: 4,
+      borderBottomWidth: 1,
+      borderColor: palette.line,
+    },
+    subtaskRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+      minHeight: 44,
+      marginBottom: 4,
+    },
+    subtaskToggle: {
+      flex: 1,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+      paddingVertical: 10,
+    },
+    notesToggle: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+      marginTop: 18,
+      marginBottom: 6,
+      backgroundColor: palette.surface,
+      borderRadius: 10,
+      paddingHorizontal: 13,
+      paddingVertical: 12,
+    },
     movieSearch: {
       paddingHorizontal: 24,
       flexDirection: 'row',

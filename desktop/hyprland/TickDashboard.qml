@@ -17,6 +17,7 @@ FocusScope {
     property string errorText: ""
     property var suggestions: []
     property string searchedText: ""
+    property string searchedAccount: ""
     readonly property string executable: Quickshell.env("HOME") + "/.local/bin/tick-and-done"
     readonly property var unfinished: (state.items || []).filter(i => i.kind === root.kind && !i.done && !i.deletedAt && !i.parentId).sort((a,b) => a.position-b.position || a.id.localeCompare(b.id))
     readonly property var finished: (state.items || []).filter(i => i.kind === root.kind && i.done && !i.deletedAt && !i.parentId).sort((a,b) => Date.parse(b.updatedAt)-Date.parse(a.updatedAt))
@@ -31,9 +32,10 @@ FocusScope {
     Component.onCompleted: refresh()
     Timer { interval: 1500; repeat: true; running: root.active; onTriggered: root.refresh() }
     Timer { id: searchDelay; interval: 350; onTriggered: {
-        if(root.kind!=="movie" || input.text.trim().length<2 || search.running) return;
+        if (!root.connected || root.kind !== "movie" || input.text.trim().length < 2 || search.running) return;
         root.searchedText=input.text.trim();
-        search.command=[root.executable,"--ipc",JSON.stringify({action:"search",query:root.searchedText,expectedAccount:root.state._account})];search.running=true;
+        root.searchedAccount=root.state._account;
+        search.command=[root.executable,"--ipc",JSON.stringify({action:"search",query:root.searchedText,expectedAccount:root.searchedAccount})];search.running=true;
     } }
     Process {
         id: read
@@ -46,8 +48,24 @@ FocusScope {
     }
     Process {
         id: search
-        stdout: StdioCollector { onStreamFinished: {try {const data=JSON.parse(text);if(root.kind==="movie"&&input.text.trim()===root.searchedText&&data._account===root.state._account){root.suggestions=(data.results||[]).slice(0,4);root.errorText="";}else if(data.error)root.errorText=data.error;}catch(e){root.suggestions=[];} } }
-        onExited: {if(input.text.trim()!==root.searchedText) searchDelay.restart();}
+        stdout: StdioCollector {
+            onStreamFinished: {
+                if (!root.connected || root.kind !== "movie" || input.text.trim() !== root.searchedText ||
+                    root.searchedAccount !== root.state._account) return;
+                try {
+                    const data = JSON.parse(text);
+                    root.suggestions = data._account === root.searchedAccount ? (data.results || []).slice(0, 4) : [];
+                    root.errorText = data.error || "";
+                } catch (e) {
+                    root.suggestions = [];
+                    root.errorText = "Movie search unavailable. You can add the title manually.";
+                }
+            }
+        }
+        onExited: {
+            if (input.text.trim() !== root.searchedText || root.state._account !== root.searchedAccount)
+                searchDelay.restart();
+        }
     }
     Process { id: playback; command:["python3",Quickshell.env("HOME")+"/.local/lib/tick-and-done/spotify.py","toggle"] }
     StyledText { anchors.centerIn: parent; visible: !root.connected; text: "Open Task-tick and sign in to connect your lists."; wrapMode: Text.Wrap; width: parent.width - 40; horizontalAlignment: Text.AlignHCenter; color: Appearance.colors.colSubtext }
@@ -91,7 +109,7 @@ FocusScope {
                             padding:0
                             Keys.onSpacePressed: event => {if(text.trim().length===0){event.accepted=true;if(!playback.running)playback.running=true;}else event.accepted=false;}
                             onAccepted:root.addManual()
-                            onTextChanged:{root.suggestions=[];searchDelay.restart();}
+                            onTextChanged:{root.suggestions=[];root.errorText="";searchDelay.restart();}
                         }
                         Button {implicitWidth:32;implicitHeight:32;enabled:input.text.trim().length>0&&!write.running;onClicked:root.addManual();Accessible.name:"Add item"
                             contentItem:StyledText{text:"+";font.pixelSize:22;horizontalAlignment:Text.AlignHCenter;color:Appearance.colors.colPrimary}
