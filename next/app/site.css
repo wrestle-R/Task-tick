@@ -190,15 +190,25 @@
   text-decoration: underline;
   text-underline-offset: 4px;
 }
-.release-file {
-  display: flex;
-  justify-content: space-between;
-  gap: 20px;
-  padding: 20px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  margin: 12px 0;
+.document-page .download-apk {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 18px;
+  border-radius: 9px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  text-decoration: none;
+  font-size: 15px;
+  font-weight: 700;
 }
+.download-apk:hover { filter: brightness(1.05); }
+.document-page .linux-install-command {
+  border: 1px solid var(--line);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.linux-install-command code { padding: 0; }
 .document-page code {
   font-size: 12px;
   background: var(--sidebar);
