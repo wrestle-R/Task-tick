@@ -4,6 +4,8 @@ I wanted my todos and watchlist on my home screen. Task-tick gives each list its
 
 [Open the web app](https://task-tick-beige.vercel.app/app) · [Get it for Android or Linux](https://task-tick-beige.vercel.app/downloads) · [Latest release](https://github.com/wrestle-R/Task-tick/releases/latest)
 
+![The Todos and Movies widgets on Android with sample lists](docs/images/widgets.png)
+
 Lists work offline and sync when you're back online. The Linux app can put the same lists in the [Hyprland sidebar](docs/sidebar-integration.md).
 
 The widgets are inspired by [TickTick](https://ticktick.com/). Movie and TV search uses [TMDB](https://www.themoviedb.org/).
