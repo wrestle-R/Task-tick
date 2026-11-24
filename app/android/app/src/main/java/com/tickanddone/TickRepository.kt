@@ -26,6 +26,7 @@ class TickRepository private constructor(private val context: Context) : SQLiteO
  private val syncLock=Any()
  private val tokenLock=Any()
  @Volatile private var authGeneration=0L
+ private var authAttempt=0L
  private val prefs=context.getSharedPreferences("tick-settings",Context.MODE_PRIVATE)
  override fun onCreate(db:SQLiteDatabase){db.execSQL("CREATE TABLE accounts(id TEXT PRIMARY KEY,state TEXT NOT NULL)")}
  override fun onUpgrade(db:SQLiteDatabase,old:Int,new:Int){}
@@ -40,38 +41,68 @@ class TickRepository private constructor(private val context: Context) : SQLiteO
  @Synchronized fun snapshot():JSONObject=JSONObject().put("online",online()).put("lastSyncAt",prefs.getLong("lastSyncAt-${account()}",0)).put("syncError",prefs.getString("syncError-${account()}","")).put("state",read()).put("email",prefs.getString("email",null)).put("account",account()).put("backend",backend()).put("preciseAlarms",Reminders.canScheduleExact(context)).put("appearance",appearance())
  fun online():Boolean {val manager=context.getSystemService(android.net.ConnectivityManager::class.java);val caps=manager.getNetworkCapabilities(manager.activeNetwork)?:return false;return caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_VALIDATED)}
  private fun key():javax.crypto.SecretKey{val ks=KeyStore.getInstance("AndroidKeyStore").apply{load(null)};return (ks.getKey("tick-session",null) as? javax.crypto.SecretKey)?:KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES,"AndroidKeyStore").apply{init(KeyGenParameterSpec.Builder("tick-session",KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT).setBlockModes(KeyProperties.BLOCK_MODE_GCM).setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE).build())}.generateKey()}
- private fun writeSession(value:JSONObject){val c=Cipher.getInstance("AES/GCM/NoPadding");c.init(Cipher.ENCRYPT_MODE,key());val data=c.iv+c.doFinal(value.toString().toByteArray());prefs.edit().putString("session",Base64.encodeToString(data,Base64.NO_WRAP)).commit()}
+ private fun encryptSession(value:JSONObject):String {
+  val cipher=Cipher.getInstance("AES/GCM/NoPadding")
+  cipher.init(Cipher.ENCRYPT_MODE,key())
+  return Base64.encodeToString(cipher.iv+cipher.doFinal(value.toString().toByteArray()),Base64.NO_WRAP)
+ }
  private fun session():JSONObject{val bytes=Base64.decode(prefs.getString("session",null)?:throw IllegalStateException("Sign in again to sync. Saved edits are safe."),Base64.NO_WRAP);val c=Cipher.getInstance("AES/GCM/NoPadding");c.init(Cipher.DECRYPT_MODE,key(),GCMParameterSpec(128,bytes.copyOfRange(0,12)));return JSONObject(String(c.doFinal(bytes.copyOfRange(12,bytes.size))))}
  private fun request(url:String,body:JSONObject?=null,token:String?=null,key:String?=null):JSONObject {
-  val con=URL(url).openConnection() as HttpURLConnection;con.connectTimeout=15000;con.readTimeout=20000;con.setRequestProperty("Content-Type","application/json");if(token!=null)con.setRequestProperty("Authorization","Bearer $token");if(key!=null)con.setRequestProperty("apikey",key)
+  val con=URL(url).openConnection() as HttpURLConnection;con.instanceFollowRedirects=false;con.connectTimeout=15000;con.readTimeout=20000;con.setRequestProperty("Content-Type","application/json");if(token!=null)con.setRequestProperty("Authorization","Bearer $token");if(key!=null)con.setRequestProperty("apikey",key)
   if(body!=null){con.requestMethod="POST";con.doOutput=true;con.outputStream.use{it.write(body.toString().toByteArray())}}
   try{val code=con.responseCode;val text=(if(code in 200..299)con.inputStream else con.errorStream)?.bufferedReader()?.use{it.readText()}?:"{}";val result=JSONObject(text.ifBlank{"{}"});if(code !in 200..299)throw IllegalStateException(result.optString("error_description",result.optString("msg",result.optString("error","Request failed ($code)"))));return result}finally{con.disconnect()}
  }
  fun authenticate(mode:String,email:String,password:String,api:String):String {
-  val attempt=synchronized(this){++authGeneration}
+  val attempt=synchronized(this){++authAttempt}
   val site=api.trim().trimEnd('/');require(site.startsWith("https://")||(BuildConfig.DEBUG&&site.startsWith("http://"))){"Use an HTTPS website URL"}
   val config=request("$site/api/config");val url=config.optString("url");val key=config.optString("key");require(url.startsWith("https://")&&key.isNotEmpty()){"Account service is not configured"}
-  prefs.edit().putString("backend",site).putString("supabase",url).putString("clientKey",key).commit()
   val redirect=java.net.URLEncoder.encode("$site/app","UTF-8")
   val endpoint=when(mode){"signup"->"signup?redirect_to=$redirect";"reset"->"recover?redirect_to=$redirect";else->"token?grant_type=password"}
   val body=JSONObject().put("email",email).put("password",password);val response=request("$url/auth/v1/$endpoint",body,key=key)
-  if(response.has("access_token")){synchronized(this){check(authGeneration==attempt){"Sign-in changed. Try again."};context.getSystemService(android.app.NotificationManager::class.java).cancel(201);writeSession(response);prefs.edit().putString("account",response.getJSONObject("user").getString("id")).putString("email",email).commit()};scheduleSync();Widgets.refresh(context);Reminders.schedule(context);return "Signed in"}
+  if(response.has("access_token")){
+   synchronized(this){
+    check(authAttempt==attempt){"Sign-in changed. Try again."}
+    val owner=response.getJSONObject("user").getString("id")
+    check(prefs.edit().putString("supabase",url).putString("clientKey",key)
+     .putString("session",encryptSession(response)).putString("account",owner)
+     .putString("email",email).commit()){"Could not save sign-in"}
+    authGeneration++
+    context.getSystemService(android.app.NotificationManager::class.java).cancel(201)
+   }
+   scheduleSync();Widgets.refresh(context);Reminders.schedule(context)
+   return "Signed in"
+  }
   return if(mode=="reset")"Check your email for a password reset link." else "Check your email to verify your account, then sign in."
  }
+ private data class RefreshSession(val owner:String,val generation:Long,val session:JSONObject,val url:String,val clientKey:String)
+
  private fun accessToken():String = synchronized(tokenLock) {
-  val (owner,generation,saved)=synchronized(this){Triple(account()?:throw IllegalStateException("Sign in to sync"),authGeneration,session())};var s=saved
-  if(s.optLong("expires_at",0)<System.currentTimeMillis()/1000+60){
-   s=request("${prefs.getString("supabase","")}/auth/v1/token?grant_type=refresh_token",JSONObject().put("refresh_token",s.getString("refresh_token")),key=prefs.getString("clientKey",null))
-   synchronized(this){check(account()==owner&&authGeneration==generation){"Account changed. Sign in to sync."};writeSession(s)}
+  val current=synchronized(this){
+   RefreshSession(
+    account()?:throw IllegalStateException("Sign in to sync"),authGeneration,session(),
+    prefs.getString("supabase",null)?:throw IllegalStateException("Sign in to sync"),
+    prefs.getString("clientKey",null)?:throw IllegalStateException("Sign in to sync")
+   )
   }
-  check(account()==owner&&authGeneration==generation){"Account changed. Sign in to sync."};s.getString("access_token")
+  var tokenSession=current.session
+  val refreshing=tokenSession.optLong("expires_at",0)<System.currentTimeMillis()/1000+60
+  if(refreshing){
+   tokenSession=request("${current.url}/auth/v1/token?grant_type=refresh_token",
+    JSONObject().put("refresh_token",tokenSession.getString("refresh_token")),key=current.clientKey)
+   check(tokenSession.getJSONObject("user").getString("id")==current.owner){"Account changed. Sign in to sync."}
+  }
+  synchronized(this){
+   check(account()==current.owner&&authGeneration==current.generation){"Account changed. Sign in to sync."}
+   if(refreshing) check(prefs.edit().putString("session",encryptSession(tokenSession)).commit()){"Could not save session"}
+   tokenSession.getString("access_token")
+  }
  }
 
  fun logout(){
   val revoke=synchronized(this){
    val token=runCatching{session().optString("access_token")}.getOrNull()
    val url=prefs.getString("supabase",null);val clientKey=prefs.getString("clientKey",null)
-   authGeneration++;context.getSystemService(JobScheduler::class.java).apply{cancel(100);cancel(101)}
+   authAttempt++;authGeneration++;context.getSystemService(JobScheduler::class.java).apply{cancel(100);cancel(101)}
    context.getSystemService(android.app.NotificationManager::class.java).cancel(201)
    check(prefs.edit().remove("account").remove("email").remove("session").commit()){"Could not sign out"}
    Triple(url,clientKey,token)
