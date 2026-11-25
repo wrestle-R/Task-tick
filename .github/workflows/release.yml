@@ -108,4 +108,9 @@ jobs:
           node desktop/scripts/release-manifest.mjs artifacts
           cd artifacts
           sha256sum *.apk *.deb *.AppImage *.sig *.json *.sh > SHA256SUMS
-          gh release create "$RELEASE_TAG" --repo "$RELEASE_REPO" --draft --title "Task-tick $RELEASE_TAG" --notes 'Build checks passed. Device, package installation and update acceptance must be recorded before publishing.' ./*
+          archive="Task-tick_${RELEASE_TAG#v}_packages.zip"
+          python3 -m zipfile -c "$archive" ./*
+          python3 -m zipfile -t "$archive"
+          sha256sum "$archive" >> SHA256SUMS
+          sha256sum --strict -c SHA256SUMS
+          gh release create "$RELEASE_TAG" --repo "$RELEASE_REPO" --verify-tag --draft --title "Task-tick $RELEASE_TAG" --notes 'Build checks passed. Device, package installation and update acceptance must be recorded before publishing.' ./*
